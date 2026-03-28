@@ -102,7 +102,7 @@ export function DslElementHeader(props: Props) {
     }
 
     function isWide(): boolean {
-        return ['RouteConfigurationDefinition', 'RouteTemplateDefinition', 'RouteDefinition', 'ChoiceDefinition', 'MulticastDefinition',
+        return ['RouteConfigurationDefinition', 'RouteTemplateDefinition', 'RouteDefinition', 'OnExceptionDefinition', 'ChoiceDefinition', 'MulticastDefinition',
             'LoadBalanceDefinition', 'TryDefinition', 'CircuitBreakerDefinition']
             .includes(step.dslName);
     }
@@ -224,6 +224,10 @@ export function DslElementHeader(props: Props) {
             if (hasElements(step)) {
                 classes.push(isElementSelected() ? 'header-bottom-selected' : 'header-bottom-not-selected')
             }
+        } else if (step.dslName === 'OnExceptionDefinition') {
+            classes.push('header-route')
+            classes.push('header-bottom-line')
+            classes.push(isElementSelected() ? 'header-bottom-selected' : 'header-bottom-not-selected')
         } else {
             classes.push('header')
         }
@@ -238,10 +242,10 @@ export function DslElementHeader(props: Props) {
         const inRouteConfiguration = parent !== undefined && parent.dslName === 'RouteConfigurationDefinition';
         const showAddButton = !['CatchDefinition', 'RouteTemplateDefinition', 'RouteDefinition'].includes(step.dslName) && availableModels.length > 0;
         const showInsertButton =
-            !['FromDefinition', 'RouteConfigurationDefinition', 'RouteTemplateDefinition', 'RouteDefinition', 'CatchDefinition', 'FinallyDefinition', 'WhenDefinition', 'OtherwiseDefinition'].includes(step.dslName)
+            !['FromDefinition', 'RouteConfigurationDefinition', 'RouteTemplateDefinition', 'RouteDefinition', 'OnExceptionDefinition', 'CatchDefinition', 'FinallyDefinition', 'WhenDefinition', 'OtherwiseDefinition'].includes(step.dslName)
             && !inRouteConfiguration;
         const showDeleteButton = !('RouteDefinition' === step.dslName && 'RouteTemplateDefinition' === parent?.dslName);
-        const showCopyButton = !['FromDefinition', 'RouteConfigurationDefinition', 'RouteTemplateDefinition', 'RouteDefinition', 'CatchDefinition', 'FinallyDefinition', 'WhenDefinition', 'OtherwiseDefinition'].includes(step.dslName)
+        const showCopyButton = !['FromDefinition', 'RouteConfigurationDefinition', 'RouteTemplateDefinition', 'RouteDefinition', 'OnExceptionDefinition', 'CatchDefinition', 'FinallyDefinition', 'WhenDefinition', 'OtherwiseDefinition'].includes(step.dslName)
         const showDisableButton = Object.getOwnPropertyNames(step).includes('disabled')
         const showAutoStartupButton =  Object.getOwnPropertyNames(step).includes('autoStartup')
         const headerClasses = getHeaderClasses();

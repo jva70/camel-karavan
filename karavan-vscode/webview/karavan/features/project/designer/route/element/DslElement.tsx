@@ -110,7 +110,7 @@ export function DslElement(props: Props) {
     }
 
     function isNotDraggable(): boolean {
-        return ['FromDefinition', 'RouteConfigurationDefinition', 'RouteDefinition', 'WhenDefinition', 'OtherwiseDefinition'].includes(step.dslName);
+        return ['FromDefinition', 'RouteConfigurationDefinition', 'RouteDefinition', 'OnExceptionDefinition', 'WhenDefinition', 'OtherwiseDefinition'].includes(step.dslName);
     }
 
     function isAddStepButtonLeft(): boolean {

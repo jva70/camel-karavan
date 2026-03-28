@@ -25,6 +25,7 @@ import {
     JsonDataFormat,
     LogDefinition,
     MarshalDefinition,
+    OnExceptionDefinition,
     RouteConfigurationDefinition,
     RouteDefinition,
     RouteTemplateDefinition,
@@ -105,6 +106,8 @@ export function useRouteDesignerHook() {
             message = 'Delete route template?';
         } else if (ce.dslName === 'RouteConfigurationDefinition') {
             message = 'Delete route configuration?';
+        } else if (ce.dslName === 'OnExceptionDefinition') {
+            message = 'Delete onException handler?';
         } else {
             message = `"Delete element from route?"`;
         }
@@ -331,6 +334,15 @@ export function useRouteDesignerHook() {
         setSelectedUuids([routeConfiguration.uuid]);
     }
 
+    const createOnException = () => {
+        const clone = CamelUtil.cloneIntegration(integration);
+        const onException = new OnExceptionDefinition();
+        const i = CamelDefinitionApiExt.addOnExceptionToIntegration(clone, onException);
+        setIntegration(i, false);
+        setSelectedStep(onException);
+        setSelectedUuids([onException.uuid]);
+    }
+
     const createRouteTemplate = (dsl: DslMetaModel) => {
         const clone = CamelUtil.cloneIntegration(integration);
         const keys = dsl.properties ? Object.keys(dsl.properties) : [];
@@ -380,7 +392,7 @@ export function useRouteDesignerHook() {
 
     return {
         deleteElement, selectElement, moveElement, onShowDeleteConfirmation, onDslSelect, openSelector,
-        createRouteConfiguration, handleKeyDown, handleKeyUp, unselectElement, isKamelet, isSourceKamelet,
+        createRouteConfiguration, createOnException, handleKeyDown, handleKeyUp, unselectElement, isKamelet, isSourceKamelet,
         isActionKamelet, isSinkKamelet, openSelectorToReplaceFrom, createRouteTemplate, copyPasteStep
     }
 }

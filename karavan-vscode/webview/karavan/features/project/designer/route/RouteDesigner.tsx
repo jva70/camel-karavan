@@ -32,7 +32,7 @@ import {RouteTemplateElement} from "./element/RouteTemplateElement";
 
 export function RouteDesigner() {
 
-    const {openSelector, createRouteConfiguration, unselectElement, onDslSelect,
+    const {openSelector, createRouteConfiguration, createOnException, unselectElement, onDslSelect,
         isSourceKamelet, isActionKamelet, isKamelet, isSinkKamelet, createRouteTemplate} = useRouteDesignerHook();
 
     const [integration] = useIntegrationStore((state) => [state.integration], shallow)
@@ -96,6 +96,13 @@ export function RouteDesigner() {
         const showNewRouteConfiguration = !isKamelet() && routes.length === 0;
         return (
             <div className="add-flow">
+                {!isKamelet() && <Button
+                    variant="secondary"
+                    icon={<PlusIcon/>}
+                    onClick={e => createOnException()}
+                >
+                    Add onException
+                </Button>}
                 {showNewRoute && <Button
                     variant={routes.length === 0 ? "primary" : "secondary"}
                     icon={<PlusIcon/>}
@@ -136,6 +143,7 @@ export function RouteDesigner() {
         const routes = CamelUi.getRoutes(integration);
         const routeConfigurations = CamelUi.getRouteConfigurations(integration);
         const routeTemplates = CamelUi.getRouteTemplates(integration);
+        const onExceptions = CamelUi.getOnExceptions(integration);
         return (
             <div className="graph" ref={printerRef}>
                 <DslConnections/>
@@ -144,6 +152,16 @@ export function RouteDesigner() {
                      data-click="FLOWS"
                      onClick={event => {unselectElement(event)}}
                      ref={flowRef}>
+                    {onExceptions?.map((onException, index: number, array) => (
+                        <DslElement key={onException.uuid}
+                                    inSteps={false}
+                                    position={index}
+                                    step={onException}
+                                    nextStep={undefined}
+                                    prevStep={undefined}
+                                    inStepsLength={array.length}
+                                    parent={undefined}/>
+                    ))}
                     {routeConfigurations?.map((routeConfiguration, index: number, array) => (
                         <DslElement key={routeConfiguration.uuid}
                                     inSteps={false}

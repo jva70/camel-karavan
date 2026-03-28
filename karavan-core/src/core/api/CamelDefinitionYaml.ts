@@ -32,7 +32,13 @@ export class CamelDefinitionYaml {
         const clone: any = CamelUtil.cloneIntegration(integration);
         const flows = integration.spec.flows;
         clone.spec.flows = flows
-            ?.map((f: any) => CamelDefinitionYaml.cleanupElement(f))
+            ?.sort((a: any, b: any) => {
+                const aOE = a.dslName === 'OnExceptionDefinition';
+                const bOE = b.dslName === 'OnExceptionDefinition';
+                if (aOE === bOE) return 0;
+                return aOE ? -1 : 1;
+            })
+            .map((f: any) => CamelDefinitionYaml.cleanupElement(f))
             .filter(x => Object.keys(x).length !== 0);
         if (integration.type === 'crd') {
             delete clone.type;
@@ -333,7 +339,7 @@ export class CamelDefinitionYaml {
         flows.filter((e: any) => e.hasOwnProperty('errorHandler'))
             .forEach((f: any) =>  result.push(CamelDefinitionYamlStep.readRouteConfigurationDefinition(new RouteConfigurationDefinition({errorHandler: f.errorHandler}))));
         flows.filter((e: any) => e.hasOwnProperty('onException'))
-            .forEach((f: any) =>  result.push(CamelDefinitionYamlStep.readRouteConfigurationDefinition(new RouteConfigurationDefinition({onException: f.onException}))));
+            .forEach((f: any) => result.push(CamelDefinitionYamlStep.readOnExceptionDefinition(f.onException)));
         flows.filter((e: any) => e.hasOwnProperty('intercept'))
             .forEach((f: any) =>  result.push(CamelDefinitionYamlStep.readRouteConfigurationDefinition(new RouteConfigurationDefinition({intercept: f.intercept}))));
         flows.filter((e: any) => e.hasOwnProperty('interceptFrom'))

@@ -21,7 +21,7 @@ import {ComponentApi} from "@karavan-core/api/ComponentApi";
 import {CamelMetadataApi} from "@karavan-core/model/CamelMetadata";
 import {CamelUtil} from "@karavan-core/api/CamelUtil";
 import {CamelDefinitionApiExt} from "@karavan-core/api/CamelDefinitionApiExt";
-import {BeanFactoryDefinition, FromDefinition, RouteConfigurationDefinition, RouteDefinition, RouteTemplateDefinition, ToDefinition} from "@karavan-core/model/CamelDefinition";
+import {BeanFactoryDefinition, FromDefinition, OnExceptionDefinition, RouteConfigurationDefinition, RouteDefinition, RouteTemplateDefinition, ToDefinition} from "@karavan-core/model/CamelDefinition";
 import {CamelElement, Integration, IntegrationFile} from "@karavan-core/model/IntegrationDefinition";
 import {
     ActivemqIcon,
@@ -1042,6 +1042,13 @@ export class CamelUi {
     static getRouteConfigurations = (integration: Integration): RouteConfigurationDefinition[] | undefined => {
         const result: CamelElement[] = [];
         integration.spec.flows?.filter((e: any) => e.dslName === 'RouteConfigurationDefinition')
+            .forEach((f: any) => result.push(f));
+        return result;
+    }
+
+    static getOnExceptions = (integration: Integration): OnExceptionDefinition[] => {
+        const result: OnExceptionDefinition[] = [];
+        integration.spec.flows?.filter((e: any) => e.dslName === 'OnExceptionDefinition')
             .forEach((f: any) => result.push(f));
         return result;
     }

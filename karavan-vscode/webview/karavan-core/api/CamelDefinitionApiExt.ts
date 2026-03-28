@@ -20,6 +20,7 @@ import {
     BeanFactoryDefinition,
     ExpressionDefinition,
     FromDefinition,
+    OnExceptionDefinition,
     RestDefinition,
     RouteConfigurationDefinition,
     RouteDefinition,
@@ -87,7 +88,7 @@ export class CamelDefinitionApiExt {
             integration.spec.flows?.push(step as RouteDefinition);
         } else {
             const flows: any = [];
-            CamelDefinitionApiExt.getFlowsNotOfTypes(integration, coreRoutishElements).forEach(bean =>
+            CamelDefinitionApiExt.getFlowsNotOfTypes(integration, [...coreRoutishElements, 'OnExceptionDefinition']).forEach(bean =>
                 flows.push(bean),
             );
             const routes = CamelDefinitionApiExt.addStepToSteps(CamelDefinitionApiExt.getFlowsOfType(integration, 'RouteDefinition'), step, parentId, position,);
@@ -96,8 +97,15 @@ export class CamelDefinitionApiExt {
             flows.push(...routeConfigurations);
             const routeTemplates = CamelDefinitionApiExt.addStepToSteps(CamelDefinitionApiExt.getFlowsOfType(integration, 'RouteTemplateDefinition'),step, parentId, position,);
             flows.push(...routeTemplates);
+            const onExceptions = CamelDefinitionApiExt.addStepToSteps(CamelDefinitionApiExt.getFlowsOfType(integration, 'OnExceptionDefinition'), step, parentId, position);
+            flows.push(...onExceptions);
             integration.spec.flows = flows;
         }
+        return integration;
+    };
+
+    static addOnExceptionToIntegration = (integration: Integration, onException: OnExceptionDefinition): Integration => {
+        integration.spec.flows?.push(onException);
         return integration;
     };
 
@@ -297,12 +305,17 @@ export class CamelDefinitionApiExt {
 
     static deleteStepFromIntegration = (integration: Integration, uuidToDelete: string): Integration => {
         const flows: any[] =
-            integration.spec.flows?.filter(flow => !coreRoutishElements.includes(flow.dslName),) ?? [];
+            integration.spec.flows?.filter(flow => !coreRoutishElements.includes(flow.dslName) && flow.dslName !== 'OnExceptionDefinition') ?? [];
         const routes = CamelDefinitionApiExt.deleteStepFromSteps(
-            integration.spec.flows?.filter(flow => coreRoutishElements.includes(flow.dslName),),
+            integration.spec.flows?.filter(flow => coreRoutishElements.includes(flow.dslName)),
+            uuidToDelete,
+        );
+        const onExceptions = CamelDefinitionApiExt.deleteStepFromSteps(
+            integration.spec.flows?.filter(flow => flow.dslName === 'OnExceptionDefinition'),
             uuidToDelete,
         );
         flows.push(...routes);
+        flows.push(...onExceptions);
         integration.spec.flows = flows;
         return integration;
     };
@@ -734,6 +747,9 @@ export class CamelDefinitionApiExt {
             } else if (flow.dslName === 'RouteTemplateDefinition') {
                 const routeTemplate = CamelDefinitionApiExt.updateElement(flow, elementClone) as RouteTemplateDefinition;
                 flows.push(CamelDefinitionApi.createRouteTemplateDefinition(routeTemplate));
+            } else if (flow.dslName === 'OnExceptionDefinition') {
+                const onException = CamelDefinitionApiExt.updateElement(flow, elementClone) as OnExceptionDefinition;
+                flows.push(CamelDefinitionApi.createOnExceptionDefinition(onException));
             } else {
                 flows.push(flow);
             }

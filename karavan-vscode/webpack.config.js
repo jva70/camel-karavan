@@ -8,6 +8,7 @@ const webpack = require("webpack");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const CopyPlugin = require("copy-webpack-plugin");
 const TsconfigPathsPlugin = require("tsconfig-paths-webpack-plugin");
+const TerserPlugin = require("terser-webpack-plugin");
 
 const imageInlineSizeLimit = parseInt(
     process.env.IMAGE_INLINE_SIZE_LIMIT || "10000"
@@ -20,6 +21,9 @@ const baseConfig = (webpackEnv) => {
     return {
         mode: isEnvProduction ? "production" : isEnvDevelopment && "development",
         bail: isEnvProduction,
+        optimization: isEnvProduction ? {
+            minimizer: [new TerserPlugin({ parallel: false })],
+        } : undefined,
         devtool: isEnvProduction
             ? "source-map"
             : isEnvDevelopment && "eval-cheap-module-source-map",
