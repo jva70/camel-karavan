@@ -171,6 +171,14 @@ export function activate(context: ExtensionContext) {
     commands.registerCommand('karavan.reportIssue', () => {
         env.openExternal(Uri.parse('https://github.com/apache/camel-karavan/issues/new?title=[VS+Code]New+report&template=issue_template.md'));
     });
+
+    // One-time welcome notification so users know they are running the extended fork
+    if (!context.globalState.get('xkaravan.welcomed')) {
+        context.globalState.update('xkaravan.welcomed', true);
+        window.showInformationMessage(
+            'XKaravan (eXtended Karavan) is active — XSLT mapping and Kamelet schema panels are available. This is a fork of Apache Camel Karavan.'
+        );
+    }
 }
 
 /**

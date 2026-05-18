@@ -1,6 +1,13 @@
 ![License](https://img.shields.io/badge/License-Apache-blue.svg?style=for-the-badge&logo=apache)
 
-## Apache Camel Karavan
+## XKaravan — eXtended Karavan
+**XKaravan** is a fork of Apache Camel Karavan extended with XSLT visual mapper and Kamelet schema panels.
+You are running the **extended** version — not the standard Apache Camel Karavan extension.
+New capabilities: XSLT file picker, XSLT editor modal, Input/Output/Error schema panel with XSD tree view.
+
+---
+
+## Apache Camel Karavan (upstream)
 Karavan is an Integration Toolkit for Apache Camel, which makes integration easy and fun through the visualization of pipelines, integration with runtimes and package, image build and deploy to kubernetes out-of-the-box.
 
 ![karavan-vscode](images/karavan-vscode.png)

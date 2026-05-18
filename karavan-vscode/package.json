@@ -1,9 +1,9 @@
 {
-  "name": "xmlmapper",
+  "name": "xkaravan",
   "publisher": "camel-karavan",
-  "displayName": "XMLmapper",
+  "displayName": "XKaravan",
   "icon": "icons/karavan.png",
-  "description": "Integration Toolkit for Apache Camel",
+  "description": "eXtended Karavan — Apache Camel Karavan fork with XSLT visual mapper and Kamelet schema panels",
   "version": "4.18.1",
   "license": "Apache-2.0",
   "preview": false,
@@ -59,7 +59,7 @@
   "browser": "./dist/extension.js",
   "contributes": {
     "configuration": {
-      "title": "Karavan",
+      "title": "XKaravan",
       "properties": {
         "camel.version": {
           "type": "string",
@@ -430,56 +430,56 @@
     "commands": [
       {
         "command": "karavan.topology",
-        "title": "Karavan: Show Topology",
+        "title": "XKaravan: Show Topology",
         "icon": "$(type-hierarchy)"
       },
       {
         "command": "karavan.create-yaml",
-        "title": "Karavan: Create Integration",
+        "title": "XKaravan: Create Integration",
         "icon": "$(add)"
       },
       {
         "command": "karavan.create-kamelet",
-        "title": "Karavan: Create Kamelet",
+        "title": "XKaravan: Create Kamelet",
         "icon": "$(add)"
       },
       {
         "command": "karavan.create-application",
-        "title": "Karavan: Create Application",
+        "title": "XKaravan: Create Application",
         "icon": "$(symbol-property)"
       },
       {
         "command": "karavan.open",
-        "title": "Karavan: Open",
+        "title": "XKaravan: Open",
         "icon": "$(wand)"
       },
       {
         "command": "karavan.open-file",
-        "title": "Karavan: Open editor"
+        "title": "XKaravan: Open editor"
       },
       {
         "command": "karavan.run-project-jbang",
-        "title": "Karavan: JBang run",
+        "title": "XKaravan: JBang run",
         "icon": "$(rocket)"
       },
       {
         "command": "karavan.run-project-runtime",
-        "title": "Karavan: Runtime run",
+        "title": "XKaravan: Runtime run",
         "icon": "$(run)"
       },
       {
         "command": "karavan.jbang-export",
-        "title": "Karavan: Export",
+        "title": "XKaravan: Export",
         "icon": "$(export)"
       },
       {
         "command": "karavan.deploy",
-        "title": "Karavan: Deploy",
+        "title": "XKaravan: Deploy",
         "icon": "$(layers)"
       },
       {
         "command": "karavan.generate-rest",
-        "title": "Karavan: Generate REST API"
+        "title": "XKaravan: Generate REST API"
       },
       {
         "command": "karavan.download-image",
@@ -634,7 +634,7 @@
       "activitybar": [
         {
           "id": "karavanView",
-          "title": "Karavan",
+          "title": "XKaravan",
           "icon": "icons/karavan-mono-24x24.svg"
         }
       ]
