@@ -1,13 +1,13 @@
 # Changelog
 
-## XMLmapper 4.18.0
-- Fork base: Apache Camel Karavan 4.18.0
+## XMLmapper 4.18.1
+- Fork base: Apache Camel Karavan 4.18.1
 - Adds XSLT visual mapper and Kamelet schema panels
 - Re-validate against new Karavan upstream: update fork, run `npm install && vsce package`, smoke-test Karavan designer
 
-## 4.18.0
-0. Camel 4.18.0
-1. Kamelets 4.18.0
+## 4.18.1
+0. Camel 4.18.1
+1. Kamelets 4.18.1
 3. Jkube 1.19.0
 4. JBang v0.137.1
 4. Quarkus 3.27.2

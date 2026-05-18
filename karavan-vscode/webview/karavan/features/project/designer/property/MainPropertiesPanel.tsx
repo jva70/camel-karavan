@@ -19,7 +19,7 @@ import {ToggleGroup, ToggleGroupItem} from '@patternfly/react-core';
 import '@features/project/designer/property/DslProperties.css';
 import {ErrorBoundaryWrapper} from "@shared/ui/ErrorBoundaryWrapper";
 import {DslProperties} from "@features/project/designer/property/DslProperties";
-import {ExpressionEditor} from "@features/project/designer/property/expression/ExpressionEditor";
+import { ExpressionEditor } from './expression/ExpressionEditor';
 import {SchemaPanelTabs} from '@features/project/designer/schema-panel/SchemaPanelTabs';
 
 export function MainPropertiesPanel() {
