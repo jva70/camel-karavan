@@ -16,11 +16,12 @@
  */
 import React, {useEffect, useState} from 'react';
 import {Button, InputGroup, InputGroupItem, TextInput} from '@patternfly/react-core';
-import {EditAltIcon, FolderOpenIcon} from '@patternfly/react-icons';
+import {EditAltIcon, FolderOpenIcon, ConnectedIcon} from '@patternfly/react-icons';
 import {PropertyMeta} from '@karavan-core/model/CamelMetadata';
 import {useXsltStore} from './XsltStore';
 import {XsltEditorModal} from './XsltEditorModal';
 import {XSLT_BINDING_PROPERTIES} from './XsltConfig';
+import {useXsltMapperStore} from '../xslt-mapper/XsltMapperStore';
 import vscode from '@/vscode';
 import type {WebviewToHostMessage} from '../../../../../../src/messages';
 import './XsltPropertyField.css';
@@ -67,6 +68,10 @@ export function XsltPropertyField({property, value, propertyChanged}: Props) {
         setModalOpen(true);
     };
 
+    const handleOpenMapper = () => {
+        if (value) useXsltMapperStore.getState().openMapper(value);
+    };
+
     return (
         <>
             <InputGroup className="xslt-property-field">
@@ -86,6 +91,11 @@ export function XsltPropertyField({property, value, propertyChanged}: Props) {
                 <InputGroupItem>
                     <Button variant="control" aria-label="Open XSLT editor" isDisabled={!value} onClick={handleEdit}>
                         <EditAltIcon />
+                    </Button>
+                </InputGroupItem>
+                <InputGroupItem>
+                    <Button variant="control" aria-label="Open visual mapper" isDisabled={!value} onClick={handleOpenMapper}>
+                        <ConnectedIcon />
                     </Button>
                 </InputGroupItem>
             </InputGroup>

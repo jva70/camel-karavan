@@ -16,7 +16,7 @@
  */
 
 /**
- * XMLmapper host↔WebView typed message protocol.
+ * XKaravan host↔WebView typed message protocol.
  *
  * Both the extension host (src/) and the WebView (webview/) import from this
  * file. It must remain free of any runtime imports (no vscode, no react) so it
@@ -141,6 +141,12 @@ export type HostToWebviewMessage =
         requestId: string;
         version: 1;
         payload: { storedPath: string };
+    }
+    | {
+        type: 'xsltParsed';
+        requestId: string;
+        version: 1;
+        payload: { connections: XsltConnection[]; warnings: Warning[] };
     };
 
 // ---------------------------------------------------------------------------
@@ -205,4 +211,10 @@ export type WebviewToHostMessage =
             paramName: 'inputSchema' | 'outputSchema' | 'variableSchema' | 'errorSchema';
             storedPath: string;
         };
+    }
+    | {
+        type: 'requestXsltParse';
+        requestId: string;
+        version: 1;
+        payload: { storedPath: string };
     };

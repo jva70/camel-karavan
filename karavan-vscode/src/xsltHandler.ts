@@ -20,6 +20,7 @@ import { WebviewPanel } from 'vscode';
 import { WebviewToHostMessage, HostToWebviewMessage } from './messages';
 import { resolveStoredPath, makeStoredValue } from './propertiesResolver';
 import { buildXsdTree, ReadFileFn } from './xsdResolver';
+import { parseXsltConnections } from './xsltParser';
 
 export async function handleXmlmapperMessage(
     panel: WebviewPanel,
@@ -118,5 +119,27 @@ export async function handleXmlmapperMessage(
             }
             break;
         }
+        case 'requestXsltParse': {
+            try {
+                const resolved = await resolveStoredPath(message.payload.storedPath, workspaceRoot);
+                const data = await vscode.workspace.fs.readFile(vscode.Uri.file(resolved));
+                const content = Buffer.from(data).toString('utf8');
+                const result = parseXsltConnections(content);
+                const reply: HostToWebviewMessage = {
+                    type: 'xsltParsed', requestId, version: 1,
+                    payload: { connections: result.connections, warnings: result.warnings },
+                };
+                panel.webview.postMessage(reply);
+            } catch (err: any) {
+                const reply: HostToWebviewMessage = {
+                    type: 'error', requestId, version: 1,
+                    payload: { code: 'XSLT_PARSE_FAILED', message: err.message, detail: message.payload.storedPath },
+                };
+                panel.webview.postMessage(reply);
+            }
+            break;
+        }
+        default:
+            console.warn(`[XKaravan] Unhandled WebviewToHostMessage type: ${(message as any).type}`);
     }
 }

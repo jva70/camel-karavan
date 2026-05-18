@@ -1,0 +1,123 @@
+.mapper-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.mapper-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--pf-t--global--border--color--default);
+    flex-shrink: 0;
+}
+
+.mapper-panel-title {
+    flex: 1;
+    margin: 0 !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+}
+
+.mapper-warnings-badge {
+    background-color: var(--pf-t--global--color--status--warning--default) !important;
+    color: var(--pf-t--global--text--color--on-status--default, #000) !important;
+}
+
+.mapper-parse-warnings {
+    flex-shrink: 0;
+    margin: 4px 8px;
+}
+
+.mapper-loading {
+    padding: 16px;
+}
+
+.mapper-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    min-height: 0;
+}
+
+.mapper-source-panel,
+.mapper-target-panel {
+    width: 40%;
+    overflow-y: auto;
+    padding: 4px 0;
+    flex-shrink: 0;
+}
+
+.mapper-center-gutter {
+    flex: 1;
+    min-width: 40px;
+}
+
+.mapper-panel-label {
+    display: block;
+    padding: 2px 8px;
+    font-weight: 600;
+    color: var(--pf-t--global--text--color--subtle);
+    border-bottom: 1px solid var(--pf-t--global--border--color--default);
+    margin-bottom: 2px;
+}
+
+.mapper-empty {
+    padding: 12px 8px;
+    color: var(--pf-t--global--text--color--subtle);
+}
+
+/* XPath annotation list below target tree */
+.mapper-xpath-list {
+    margin-top: 8px;
+    padding: 0 4px;
+    border-top: 1px solid var(--pf-t--global--border--color--default);
+}
+
+.mapper-xpath-item {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 2px 0;
+    font-size: 11px;
+    color: var(--pf-t--global--text--color--subtle);
+}
+
+.mapper-xpath-target {
+    font-weight: 500;
+    color: var(--pf-t--global--text--color--regular);
+    flex-shrink: 0;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mapper-xpath-arrow {
+    color: var(--pf-t--global--color--link--default);
+    flex-shrink: 0;
+}
+
+.mapper-xpath-expr {
+    font-size: 10px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mapper-xpath-warning {
+    flex-shrink: 0;
+    cursor: help;
+}
+
+/* Canvas overlay */
+.mapper-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: visible;
+}

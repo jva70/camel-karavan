@@ -17,6 +17,7 @@
 import {createWithEqualityFn} from 'zustand/traditional';
 import type {HostToWebviewMessage} from '../../../../../../src/messages';
 import {useSchemaPanelStore} from '../schema-panel/SchemaPanelStore';
+import {useXsltMapperStore} from '../xslt-mapper/XsltMapperStore';
 
 interface FileSelectedPayload {
     propertyId: string;
@@ -59,6 +60,9 @@ export const useXsltStore = createWithEqualityFn<XsltState>((set) => ({
                 break;
             case 'xsdTree':
                 useSchemaPanelStore.getState().handleHostMessage(message);
+                break;
+            case 'xsltParsed':
+                useXsltMapperStore.getState().handleHostMessage(message);
                 break;
         }
     },
