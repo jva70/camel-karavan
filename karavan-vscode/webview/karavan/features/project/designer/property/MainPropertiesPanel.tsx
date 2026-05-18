@@ -21,6 +21,7 @@ import {ErrorBoundaryWrapper} from "@shared/ui/ErrorBoundaryWrapper";
 import {DslProperties} from "@features/project/designer/property/DslProperties";
 import { ExpressionEditor } from './expression/ExpressionEditor';
 import {SchemaPanelTabs} from '@features/project/designer/schema-panel/SchemaPanelTabs';
+import {XsltMapperPanel} from '@features/project/designer/xslt-mapper/XsltMapperPanel';
 
 export function MainPropertiesPanel() {
 
@@ -34,6 +35,8 @@ export function MainPropertiesPanel() {
                                      onChange={() => setActiveTabKey('properties')}/>
                     <ToggleGroupItem text="Schema" isSelected={activeTabKey === 'schema'}
                                      onChange={() => setActiveTabKey('schema')}/>
+                    <ToggleGroupItem text="Mapper" isSelected={activeTabKey === 'mapper'}
+                                     onChange={() => setActiveTabKey('mapper')}/>
                 </ToggleGroup>
             </div>
         )
@@ -46,6 +49,7 @@ export function MainPropertiesPanel() {
             <ErrorBoundaryWrapper onError={error => console.error(error)}>
                 {activeTabKey === 'properties' && <DslProperties expressionEditor={ExpressionEditor}/> }
                 {activeTabKey === 'schema' && <SchemaPanelTabs/>}
+                {activeTabKey === 'mapper' && <XsltMapperPanel/>}
             </ErrorBoundaryWrapper>
         </div>
     )

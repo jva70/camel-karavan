@@ -5,6 +5,14 @@
     overflow: hidden;
 }
 
+.mapper-idle {
+    padding: 20px 16px;
+    color: var(--pf-t--global--text--color--subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
 .mapper-panel-header {
     display: flex;
     align-items: center;
@@ -112,6 +120,12 @@
 .mapper-xpath-warning {
     flex-shrink: 0;
     cursor: help;
+}
+
+.mapper-text-view {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 /* Canvas overlay */

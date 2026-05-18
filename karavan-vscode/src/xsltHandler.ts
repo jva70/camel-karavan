@@ -121,13 +121,34 @@ export async function handleXmlmapperMessage(
         }
         case 'requestXsltParse': {
             try {
+                const readFile: ReadFileFn = async (p: string) =>
+                    Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(p)));
+
+                // Parse XSLT → connections
                 const resolved = await resolveStoredPath(message.payload.storedPath, workspaceRoot);
                 const data = await vscode.workspace.fs.readFile(vscode.Uri.file(resolved));
                 const content = Buffer.from(data).toString('utf8');
                 const result = parseXsltConnections(content);
+
+                // Resolve source trees (one per upstream step schema)
+                const sourceTrees: Array<{ variableReceive: string; tree: import('./xsdResolver').XsdNode | null; warnings: import('./messages').Warning[] }> = [];
+                for (const src of message.payload.sourceSchemas ?? []) {
+                    if (src.storedPath) {
+                        try {
+                            const absPath = await resolveStoredPath(src.storedPath, workspaceRoot);
+                            const treeResult = await buildXsdTree(absPath, readFile);
+                            sourceTrees.push({ variableReceive: src.variableReceive, tree: treeResult.root, warnings: treeResult.warnings });
+                        } catch (e: any) {
+                            sourceTrees.push({ variableReceive: src.variableReceive, tree: null, warnings: [{ code: 'XSD_FILE_NOT_FOUND', message: e.message, severity: 'error' }] });
+                        }
+                    } else {
+                        sourceTrees.push({ variableReceive: src.variableReceive, tree: null, warnings: [] });
+                    }
+                }
+
                 const reply: HostToWebviewMessage = {
                     type: 'xsltParsed', requestId, version: 1,
-                    payload: { connections: result.connections, warnings: result.warnings },
+                    payload: { connections: result.connections, warnings: result.warnings, sourceTrees },
                 };
                 panel.webview.postMessage(reply);
             } catch (err: any) {

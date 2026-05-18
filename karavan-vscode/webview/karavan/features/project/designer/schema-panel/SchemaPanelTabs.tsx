@@ -28,8 +28,6 @@ import { useDesignerStore } from '../DesignerStore';
 import { EventBus, IntegrationUpdate } from '../utils/EventBus';
 import { useSchemaPanelStore } from './SchemaPanelStore';
 import { SchemaTreeView } from './SchemaTreeView';
-import { useXsltMapperStore } from '../xslt-mapper/XsltMapperStore';
-import { XsltMapperPanel } from '../xslt-mapper/XsltMapperPanel';
 import type { SchemaTab } from '../../../../../../src/messages';
 import './SchemaPanelTabs.css';
 
@@ -108,9 +106,6 @@ function SchemaTabContent({ tab }: TabContentProps) {
 
 export function SchemaPanelTabs() {
     const [selectedStep] = useDesignerStore((s) => [s.selectedStep], shallow);
-    const mapperIsOpen = useXsltMapperStore((s) => s.isOpen);
-
-    if (mapperIsOpen) return <XsltMapperPanel />;
 
     const [activeTab, setActiveTab, requestXsdTree, invalidateAll, reset] = useSchemaPanelStore(
         (s) => [s.activeTab, s.setActiveTab, s.requestXsdTree, s.invalidateAll, s.reset],

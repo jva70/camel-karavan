@@ -34,53 +34,82 @@ function getMidY(el: Element, container: DOMRect): number {
     return rect.top - container.top + rect.height / 2;
 }
 
+/** Escape a string for use as a literal value inside a CSS [attr="..."] selector. */
+function cssAttrValue(v: string): string {
+    return v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/** Find a node in the source panel. Tries exact path match first, then last-segment fallback. */
+function findSourceEl(container: Element, sourceVariable: string, sourceNodePath: string): Element | null {
+    const exactKey = `${sourceVariable}|${sourceNodePath}`;
+    const exact = container.querySelector(`[data-node-path="${cssAttrValue(exactKey)}"]`);
+    if (exact) return exact;
+
+    // Fallback: match by last segment of sourceNodePath within the correct variable's subtree
+    const lastSeg = sourceNodePath.split('.').pop() ?? '';
+    if (!lastSeg) return null;
+    const prefix = `${sourceVariable}|`;
+    const allSrcNodes = container.querySelectorAll('.mapper-source-panel [data-node-path]');
+    for (const el of Array.from(allSrcNodes)) {
+        const p = el.getAttribute('data-node-path') ?? '';
+        if (!p.startsWith(prefix)) continue;
+        const nodePart = p.slice(prefix.length);
+        const seg = nodePart.split('.').pop() ?? '';
+        if (seg === lastSeg) return el;
+    }
+    return null;
+}
+
+/** Find a node in the target panel. Empty targetNodePath → target root; otherwise exact then leaf fallback. */
+function findTargetEl(container: Element, targetNodePath: string): Element | null {
+    if (!targetNodePath) {
+        // Root copy/passthrough: point to the first visible target node
+        return container.querySelector('.mapper-target-panel [data-node-path]') ?? null;
+    }
+    const exact = container.querySelector(`[data-node-path="${cssAttrValue(targetNodePath)}"]`);
+    if (exact) return exact;
+
+    // Fallback: leaf-segment match within target panel (no | prefix)
+    const leafName = targetNodePath.split('.').pop() ?? '';
+    const allTgtNodes = container.querySelectorAll('.mapper-target-panel [data-node-path]');
+    for (const el of Array.from(allTgtNodes)) {
+        const p = el.getAttribute('data-node-path') ?? '';
+        if (p.includes('|')) continue;
+        const seg = p.split('.').pop() ?? '';
+        if (seg === leafName) return el;
+    }
+    return null;
+}
+
+const BLUE = 'var(--pf-t--global--color--brand--default)';
+const WARN = 'var(--pf-t--global--color--status--warning--default)';
+
 export function XsltMapperCanvas({ connections, containerRef }: Props) {
     const [lines, setLines] = useState<LineCoord[]>([]);
-    const svgRef = useRef<SVGSVGElement>(null);
 
-    const computeLines = () => {
+    const computeLines = React.useCallback(() => {
         const container = containerRef.current;
         if (!container) return;
         const containerRect = container.getBoundingClientRect();
+        if (!containerRect.width) return;
 
         const result: LineCoord[] = [];
         for (const conn of connections) {
-            // Source: data-node-path="{sourceVariable}|{sourceNodePath}"
-            const sourceKey = conn.sourceVariable
-                ? `${conn.sourceVariable}|${conn.sourceNodePath}`
-                : null;
-            // Target: data-node-path is just the XSD path (no prefix)
-            const targetKey = conn.targetNodePath || null;
+            if (!conn.sourceVariable) continue;
 
-            if (!sourceKey || !targetKey) continue;
-
-            const srcEl = container.querySelector(`[data-node-path="${CSS.escape(sourceKey)}"]`);
-            const tgtEl = container.querySelector(`[data-node-path="${CSS.escape(targetKey)}"]`);
-
-            // Also try matching just the leaf segment of targetNodePath against XSD tree
-            let resolvedTgt = tgtEl;
-            if (!resolvedTgt && conn.targetNodePath) {
-                // Try matching the last segment of the path inside any target tree
-                const leafName = conn.targetNodePath.split('.').pop() ?? '';
-                const allTargetNodes = container.querySelectorAll('[data-node-path]');
-                for (const el of Array.from(allTargetNodes)) {
-                    const p = el.getAttribute('data-node-path') ?? '';
-                    if (!p.includes('|') && (p === conn.targetNodePath || p.endsWith('.' + leafName) || p === leafName)) {
-                        resolvedTgt = el;
-                        break;
-                    }
-                }
-            }
-
-            if (!srcEl || !resolvedTgt) continue;
+            const srcEl = findSourceEl(container, conn.sourceVariable, conn.sourceNodePath);
+            const tgtEl = findTargetEl(container, conn.targetNodePath);
+            if (!srcEl || !tgtEl) continue;
 
             const y1 = getMidY(srcEl, containerRect);
-            const y2 = getMidY(resolvedTgt, containerRect);
+            const y2 = getMidY(tgtEl, containerRect);
 
-            // x1: right edge of source panel (srcEl is in left panel)
-            const srcRect = srcEl.closest('.mapper-source-panel')?.getBoundingClientRect();
-            const tgtRect = resolvedTgt.closest('.mapper-target-panel')?.getBoundingClientRect();
-            if (!srcRect || !tgtRect) continue;
+            const srcPanel = srcEl.closest('.mapper-source-panel');
+            const tgtPanel = tgtEl.closest('.mapper-target-panel');
+            if (!srcPanel || !tgtPanel) continue;
+
+            const srcRect = srcPanel.getBoundingClientRect();
+            const tgtRect = tgtPanel.getBoundingClientRect();
 
             result.push({
                 id: conn.id,
@@ -92,11 +121,13 @@ export function XsltMapperCanvas({ connections, containerRef }: Props) {
             });
         }
         setLines(result);
-    };
+    }, [connections, containerRef]);
 
+    // Fire after one animation frame so PF TreeView finishes painting
     useLayoutEffect(() => {
-        computeLines();
-    }, [connections]);
+        const raf = requestAnimationFrame(() => computeLines());
+        return () => cancelAnimationFrame(raf);
+    }, [computeLines]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -104,42 +135,38 @@ export function XsltMapperCanvas({ connections, containerRef }: Props) {
         const observer = new ResizeObserver(() => computeLines());
         observer.observe(container);
         return () => observer.disconnect();
-    }, [connections, containerRef]);
+    }, [computeLines, containerRef]);
 
     const width = containerRef.current?.offsetWidth ?? 0;
     const height = containerRef.current?.offsetHeight ?? 0;
 
     return (
         <svg
-            ref={svgRef}
             className="mapper-canvas"
-            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
-            width={width}
-            height={height}
+            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible',
+                     width, height }}
         >
             <defs>
-                <marker id="arrow-blue" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 z" fill="var(--pf-t--global--color--link--default)" />
+                <marker id="xk-arrow-blue" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L6,3 z" style={{ fill: BLUE }} />
                 </marker>
-                <marker id="arrow-warn" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 z" fill="var(--pf-t--global--color--status--warning--default)" />
+                <marker id="xk-arrow-warn" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L6,3 z" style={{ fill: WARN }} />
                 </marker>
             </defs>
             {lines.map((l) => {
-                const color = l.hasWarning
-                    ? 'var(--pf-t--global--color--status--warning--default)'
-                    : 'var(--pf-t--global--color--link--default)';
-                const marker = l.hasWarning ? 'url(#arrow-warn)' : 'url(#arrow-blue)';
                 const cx = (l.x1 + l.x2) / 2;
                 return (
                     <path
                         key={l.id}
                         d={`M${l.x1},${l.y1} C${cx},${l.y1} ${cx},${l.y2} ${l.x2},${l.y2}`}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth={1.5}
-                        strokeOpacity={0.8}
-                        markerEnd={marker}
+                        style={{
+                            fill: 'none',
+                            stroke: l.hasWarning ? WARN : BLUE,
+                            strokeWidth: 1.5,
+                            strokeOpacity: 0.85,
+                        }}
+                        markerEnd={l.hasWarning ? 'url(#xk-arrow-warn)' : 'url(#xk-arrow-blue)'}
                     />
                 );
             })}

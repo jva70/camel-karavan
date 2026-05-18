@@ -47,6 +47,7 @@ export const useXsltStore = createWithEqualityFn<XsltState>((set) => ({
         switch (message.type) {
             case 'xsltContent':
                 set({xsltContent: message.payload.content, resolvedPath: message.payload.resolvedPath});
+                useXsltMapperStore.getState().handleHostMessage(message);
                 break;
             case 'fileSelected':
                 set({
@@ -62,6 +63,9 @@ export const useXsltStore = createWithEqualityFn<XsltState>((set) => ({
                 useSchemaPanelStore.getState().handleHostMessage(message);
                 break;
             case 'xsltParsed':
+                useXsltMapperStore.getState().handleHostMessage(message);
+                break;
+            case 'error':
                 useXsltMapperStore.getState().handleHostMessage(message);
                 break;
         }

@@ -34,7 +34,8 @@ function stripNs(name: string): string {
 
 /** Convert an XPath like "$var/ns:a/ns:b/ns:c" into { variable, nodePath }.
  *  Returns null for complex expressions that cannot be mapped. */
-function parseXPathSelect(select: string): { variable: string; nodePath: string } | null {
+function parseXPathSelect(select: unknown): { variable: string; nodePath: string } | null {
+    if (typeof select !== 'string') return null;
     const m = select.match(/^(\$[\w-]+)(\/(.+))?$/);
     if (!m) return null;
     const variable = m[1];
@@ -65,8 +66,9 @@ function walkNode(
 ): void {
     // xsl:value-of
     for (const vo of arr(node['xsl:value-of'])) {
-        const select = (vo as Record<string, unknown>)['@_select'] as string | undefined;
-        if (select) {
+        const select = (vo as Record<string, unknown>)['@_select'];
+        if (select != null) {
+            const selectStr = String(select);
             const parsed = parseXPathSelect(select);
             const targetNodePath = pathContext.join('.');
             if (parsed) {
@@ -75,7 +77,7 @@ function walkNode(
                     sourceVariable: parsed.variable,
                     sourceNodePath: parsed.nodePath,
                     targetNodePath,
-                    xpathExpression: select,
+                    xpathExpression: selectStr,
                 });
             } else {
                 connections.push({
@@ -83,34 +85,40 @@ function walkNode(
                     sourceVariable: '',
                     sourceNodePath: '',
                     targetNodePath,
-                    xpathExpression: select,
+                    xpathExpression: selectStr,
                     warning: 'Complex XPath expression — source path cannot be determined visually',
                 });
             }
         }
     }
 
-    // xsl:copy-of — similar to value-of
+    // xsl:copy-of — copies source element (with its tag) as child of current context,
+    // so the effective target is pathContext + last segment of source path.
     for (const co of arr(node['xsl:copy-of'])) {
-        const select = (co as Record<string, unknown>)['@_select'] as string | undefined;
-        if (select) {
+        const select = (co as Record<string, unknown>)['@_select'];
+        if (select != null) {
+            const selectStr = String(select);
             const parsed = parseXPathSelect(select);
-            const targetNodePath = pathContext.join('.');
+            const parentPath = pathContext.join('.');
             if (parsed) {
+                const leafSeg = parsed.nodePath.split('.').pop() ?? '';
+                const targetNodePath = leafSeg
+                    ? (parentPath ? `${parentPath}.${leafSeg}` : leafSeg)
+                    : parentPath;
                 connections.push({
                     id: crypto.randomUUID(),
                     sourceVariable: parsed.variable,
                     sourceNodePath: parsed.nodePath,
                     targetNodePath,
-                    xpathExpression: select,
+                    xpathExpression: selectStr,
                 });
             } else {
                 connections.push({
                     id: crypto.randomUUID(),
                     sourceVariable: '',
                     sourceNodePath: '',
-                    targetNodePath,
-                    xpathExpression: select,
+                    targetNodePath: parentPath,
+                    xpathExpression: selectStr,
                     warning: 'Complex XPath expression — source path cannot be determined visually',
                 });
             }
@@ -119,7 +127,7 @@ function walkNode(
 
     // xsl:for-each — warn, then recurse with path context intact
     for (const fe of arr(node['xsl:for-each'])) {
-        const select = (fe as Record<string, unknown>)['@_select'] as string | undefined;
+        const select = (fe as Record<string, unknown>)['@_select'];
         warnings.push(warn(
             'XSLT_UNREPRESENTABLE_CONSTRUCT',
             `xsl:for-each (select="${select ?? ''}") — inner connections extracted with approximate paths`,
@@ -150,8 +158,8 @@ function walkNode(
 
     // xsl:sequence (XSLT 2.0)
     for (const seq of arr(node['xsl:sequence'])) {
-        const select = (seq as Record<string, unknown>)['@_select'] as string | undefined;
-        if (select) {
+        const select = (seq as Record<string, unknown>)['@_select'];
+        if (select != null) {
             const parsed = parseXPathSelect(select);
             if (parsed) {
                 connections.push({
@@ -159,7 +167,7 @@ function walkNode(
                     sourceVariable: parsed.variable,
                     sourceNodePath: parsed.nodePath,
                     targetNodePath: pathContext.join('.'),
-                    xpathExpression: select,
+                    xpathExpression: String(select),
                 });
             }
         }
@@ -202,7 +210,8 @@ export function parseXsltConnections(
     const parser = new XMLParser({
         ignoreAttributes: false,
         attributeNamePrefix: '@_',
-        isArray: () => true,
+        parseAttributeValue: false,  // keep all attribute values as strings
+        isArray: (_name, _jpath, _isLeaf, isAttribute) => !isAttribute,
     });
 
     let parsed: Record<string, unknown>;

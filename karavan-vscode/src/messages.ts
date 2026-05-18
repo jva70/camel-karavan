@@ -146,7 +146,12 @@ export type HostToWebviewMessage =
         type: 'xsltParsed';
         requestId: string;
         version: 1;
-        payload: { connections: XsltConnection[]; warnings: Warning[] };
+        payload: {
+            connections: XsltConnection[];
+            warnings: Warning[];
+            /** One entry per upstream step; tree is null when schema path is empty or resolution failed. */
+            sourceTrees: Array<{ variableReceive: string; tree: XsdNode | null; warnings: Warning[] }>;
+        };
     };
 
 // ---------------------------------------------------------------------------
@@ -216,5 +221,9 @@ export type WebviewToHostMessage =
         type: 'requestXsltParse';
         requestId: string;
         version: 1;
-        payload: { storedPath: string };
+        payload: {
+            storedPath: string;
+            /** Upstream step schemas to resolve into source trees in the same round-trip. */
+            sourceSchemas: Array<{ variableReceive: string; storedPath: string }>;
+        };
     };
