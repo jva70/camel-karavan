@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+    <xs:group name="ContactDetails">
+        <xs:sequence>
+            <xs:element name="Email" type="xs:string"/>
+            <xs:element name="Phone" type="xs:string"/>
+        </xs:sequence>
+    </xs:group>
+
+    <xs:group name="AuditFields">
+        <xs:sequence>
+            <xs:element name="CreatedAt" type="xs:dateTime"/>
+            <xs:element name="UpdatedAt" type="xs:dateTime"/>
+        </xs:sequence>
+    </xs:group>
+
+</xs:schema>

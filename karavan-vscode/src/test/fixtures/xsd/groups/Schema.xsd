@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+    <xs:include schemaLocation="./CommonGroups.xsd"/>
+
+    <xs:element name="Employee">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="EmployeeId" type="xs:string"/>
+                <xs:element name="FullName" type="xs:string"/>
+                <xs:group ref="ContactDetails"/>
+                <xs:group ref="AuditFields"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+</xs:schema>

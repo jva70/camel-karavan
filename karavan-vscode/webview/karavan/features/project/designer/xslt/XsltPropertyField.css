@@ -1,0 +1,7 @@
+.xslt-property-field {
+    width: 100%;
+}
+
+.xslt-property-field .pf-v6-c-input-group__item:last-child .pf-v6-c-button {
+    border-left: none;
+}

@@ -126,6 +126,9 @@ const webviewConfig = (webpackEnv) => {
                 Buffer: ["buffer", "Buffer"],
                 process: "process/browser",
             }),
+            new webpack.DefinePlugin({
+                __BUILD_ID__: JSON.stringify(new Date().toISOString()),
+            }),
         ],
     };
 };

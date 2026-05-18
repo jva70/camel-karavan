@@ -1,7 +1,7 @@
 {
-  "name": "karavan",
+  "name": "xmlmapper",
   "publisher": "camel-karavan",
-  "displayName": "Karavan",
+  "displayName": "XMLmapper",
   "icon": "icons/karavan.png",
   "description": "Integration Toolkit for Apache Camel",
   "version": "4.18.0",
@@ -688,6 +688,7 @@
     "@uiw/react-markdown-preview": "5.1.5",
     "buffer": "6.0.3",
     "elkjs": "^0.11.0",
+    "fast-xml-parser": "^5.8.0",
     "path-browserify": "^1.0.1",
     "react-resizable-panels": "4.6.5",
     "react-router-dom": "7.13.1",
@@ -734,6 +735,7 @@
     "tsconfig-paths-webpack-plugin": "^4.2.0",
     "typescript": "5.9.3",
     "url-loader": "4.1.1",
+    "vitest": "^4.1.6",
     "vscode-test": "1.6.1",
     "webpack": "5.103.0",
     "webpack-cli": "5.0.2"

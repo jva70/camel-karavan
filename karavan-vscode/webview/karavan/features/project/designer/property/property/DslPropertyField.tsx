@@ -58,6 +58,7 @@ import {InfrastructureAPI} from "../../utils/InfrastructureAPI";
 import {shallow} from "zustand/shallow";
 import {BeanFactoryDefinition, DataFormatDefinition, ExpressionDefinition} from "@karavan-core/model/CamelDefinition";
 import {TemplateApi} from "@karavan-core/api/TemplateApi";
+import {XsltPropertyField, XSLT_BINDING_PROPERTIES} from '../../xslt/XsltPropertyField';
 import {BeanProperties} from "./BeanProperties";
 import {PropertyPlaceholderDropdown} from "./PropertyPlaceholderDropdown";
 import {VariablesDropdown} from "./VariablesDropdown";
@@ -1026,6 +1027,7 @@ export function DslPropertyField(props: Props) {
                 && !canBeMediaType(property, element)
                 && !javaTypeGenerated(property)
                 && getSpecialStringInput(property)}
+            {XSLT_BINDING_PROPERTIES.includes(property.name as any) && <XsltPropertyField property={property} value={value} propertyChanged={propertyChanged} />}
             {['string'].includes(property.type)
                 && !isVariable
                 && property.name !== 'expression'
@@ -1034,6 +1036,7 @@ export function DslPropertyField(props: Props) {
                 && !canBeInternalUri(property, element)
                 && !canBeMediaType(property, element)
                 && !javaTypeGenerated(property)
+                && !XSLT_BINDING_PROPERTIES.includes(property.name as any)
                 && getStringInput(property)}
             {isVariable && getVariableInput(property)}
             {['string'].includes(property.type)

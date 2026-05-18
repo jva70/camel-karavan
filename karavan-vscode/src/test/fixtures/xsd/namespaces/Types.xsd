@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://example.com/types"
+           xmlns:tns="http://example.com/types">
+
+    <xs:complexType name="ProductType">
+        <xs:sequence>
+            <xs:element name="ProductId" type="xs:string"/>
+            <xs:element name="ProductName" type="xs:string"/>
+            <xs:element name="Price" type="xs:decimal"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:element name="Product" type="tns:ProductType"/>
+
+</xs:schema>

@@ -17,6 +17,7 @@
 import {commands, ExtensionContext, Uri, ViewColumn, WebviewPanel, WebviewPanelOnDidChangeViewStateEvent, window} from "vscode";
 import * as path from "path";
 import * as utils from "./utils";
+import {handleXmlmapperMessage} from "./xsltHandler";
 import {CamelDefinitionYaml} from "@karavan-core/api/CamelDefinitionYaml";
 import {Integration, KameletTypes, MetadataLabels} from "@karavan-core/model/IntegrationDefinition";
 import {getWebviewContent} from "./webviewContent";
@@ -127,6 +128,7 @@ export class DesignerView {
             // Handle messages from the webview
             panel.webview.onDidReceiveMessage(
                 message => {
+                    if (message.type) return handleXmlmapperMessage(panel, message, fullPath);
                     switch (message.command) {
                         case 'save':
                             utils.save(message.relativePath, message.code);

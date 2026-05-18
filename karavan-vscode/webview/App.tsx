@@ -30,6 +30,7 @@ import {ProjectFunctionHook} from "@app/navigation/ProjectFunctionHook";
 import {ProjectProvider} from "@features/project/ProjectContext";
 import {ProjectFile} from "@models/ProjectModels";
 import {useFilesStore} from "@stores/ProjectStore";
+import {useXsltStore} from "./karavan/features/project/designer/xslt/XsltStore";
 
 interface Props {
 }
@@ -81,6 +82,7 @@ class App extends React.Component<Props, State> {
   }
 
   componentDidMount() {
+    console.log('%c[Karavan] build ' + __BUILD_ID__, 'color: cyan; font-weight: bold');
     window.addEventListener('message', this.onMessage, false);
     vscode.postMessage({ command: 'getData' });
     this.setState({ interval: setInterval(this.saveScheduledChanges, 2000) });
@@ -135,6 +137,7 @@ class App extends React.Component<Props, State> {
         TemplateApi.saveJavaCodes(javaCodeMap, true);
         break;
       case 'open':
+        useXsltStore.getState().setYamlFullPath(message.fullPath);
         if (this.state.filename === '' && this.state.key === '') {
           if (message.page !== "designer" && this.state.interval) clearInterval(this.state.interval);
           this.setState({
@@ -163,6 +166,8 @@ class App extends React.Component<Props, State> {
       case 'downloadImage':
         EventBus.sendCommand("downloadImage");
         break;
+      default:
+        useXsltStore.getState().handleHostMessage(message);
     }
   };
 
