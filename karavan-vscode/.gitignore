@@ -1,8 +1,9 @@
 out
 dist
 node_modules
+!xkaravan-4.18.1.vsix
 .vscode-test/
-*.vsix
+
 .DS_Store
 .idea
 yarn-error.log
