@@ -17,7 +17,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { WebviewPanel } from 'vscode';
-import { WebviewToHostMessage, HostToWebviewMessage } from './messages';
+import { WebviewToHostMessage, HostToWebviewMessage, XsdNode, Warning } from './messages';
 import { resolveStoredPath, makeStoredValue } from './propertiesResolver';
 import { buildXsdTree, ReadFileFn } from './xsdResolver';
 import { parseXsltConnections } from './xsltParser';
@@ -52,6 +52,16 @@ export async function handleXmlmapperMessage(
         }
         case 'saveXsltContent': {
             try {
+                const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+                if (!wsRoot || !message.payload.resolvedPath.startsWith(wsRoot) ||
+                    !/\.(xsl|xslt)$/i.test(message.payload.resolvedPath)) {
+                    const reply: HostToWebviewMessage = {
+                        type: 'error', requestId, version: 1,
+                        payload: { code: 'XSLT_SAVE_REJECTED', message: 'Path outside workspace or not an XSLT file' },
+                    };
+                    panel.webview.postMessage(reply);
+                    break;
+                }
                 const data = Buffer.from(message.payload.content, 'utf8');
                 await vscode.workspace.fs.writeFile(vscode.Uri.file(message.payload.resolvedPath), data);
             } catch (err: any) {
@@ -87,15 +97,24 @@ export async function handleXmlmapperMessage(
             }
 
             for (const sp of rawPaths) {
-                const absPath = sp.startsWith('file:') || sp.startsWith('/')
-                    ? await resolveStoredPath(sp.startsWith('/') ? 'file:' + sp : sp, workspaceRoot)
-                    : sp;
-                const result = await buildXsdTree(absPath, readFile);
-                const reply: HostToWebviewMessage = {
-                    type: 'xsdTree', requestId, version: 1,
-                    payload: { tab, tree: result.root, warnings: result.warnings },
-                };
-                panel.webview.postMessage(reply);
+                // P3: catch per-path errors so a bad path doesn't leave the tab stuck in loading
+                try {
+                    const absPath = sp.startsWith('file:') || sp.startsWith('/')
+                        ? await resolveStoredPath(sp.startsWith('/') ? 'file:' + sp : sp, workspaceRoot)
+                        : sp;
+                    const result = await buildXsdTree(absPath, readFile);
+                    const reply: HostToWebviewMessage = {
+                        type: 'xsdTree', requestId, version: 1,
+                        payload: { tab, tree: result.root, warnings: result.warnings, rawSource: result.rawSource },
+                    };
+                    panel.webview.postMessage(reply);
+                } catch (err: any) {
+                    const reply: HostToWebviewMessage = {
+                        type: 'error', requestId, version: 1,
+                        payload: { code: 'XSD_RESOLVE_FAILED', message: err.message, detail: sp },
+                    };
+                    panel.webview.postMessage(reply);
+                }
             }
             break;
         }
@@ -131,7 +150,7 @@ export async function handleXmlmapperMessage(
                 const result = parseXsltConnections(content);
 
                 // Resolve source trees (one per upstream step schema)
-                const sourceTrees: Array<{ variableReceive: string; tree: import('./xsdResolver').XsdNode | null; warnings: import('./messages').Warning[] }> = [];
+                const sourceTrees: Array<{ variableReceive: string; tree: XsdNode | null; warnings: Warning[] }> = [];
                 for (const src of message.payload.sourceSchemas ?? []) {
                     if (src.storedPath) {
                         try {

@@ -30,8 +30,11 @@ interface XsltState {
     yamlFullPath: string;
     xsltContent: string;
     resolvedPath: string;
+    loading: boolean;
     fileSelectedPayload: FileSelectedPayload | null;
     setYamlFullPath: (yamlFullPath: string) => void;
+    setLoading: (loading: boolean) => void;
+    clearXsltContent: () => void;
     clearFileSelected: () => void;
     handleHostMessage: (message: HostToWebviewMessage) => void;
 }
@@ -40,13 +43,16 @@ export const useXsltStore = createWithEqualityFn<XsltState>((set) => ({
     yamlFullPath: '',
     xsltContent: '',
     resolvedPath: '',
+    loading: false,
     fileSelectedPayload: null,
     setYamlFullPath: (yamlFullPath) => set({yamlFullPath}),
+    setLoading: (loading) => set({loading}),
+    clearXsltContent: () => set({xsltContent: '', resolvedPath: '', loading: false}),
     clearFileSelected: () => set({fileSelectedPayload: null}),
     handleHostMessage: (message) => {
         switch (message.type) {
             case 'xsltContent':
-                set({xsltContent: message.payload.content, resolvedPath: message.payload.resolvedPath});
+                set({xsltContent: message.payload.content, resolvedPath: message.payload.resolvedPath, loading: false});
                 useXsltMapperStore.getState().handleHostMessage(message);
                 break;
             case 'fileSelected':
@@ -67,6 +73,7 @@ export const useXsltStore = createWithEqualityFn<XsltState>((set) => ({
                 break;
             case 'error':
                 useXsltMapperStore.getState().handleHostMessage(message);
+                useSchemaPanelStore.getState().handleHostMessage(message); // P5: drain schema panel requestId on error
                 break;
         }
     },

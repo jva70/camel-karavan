@@ -82,7 +82,6 @@ class App extends React.Component<Props, State> {
   }
 
   componentDidMount() {
-    console.log('%c[XKaravan] build ' + __BUILD_ID__, 'color: cyan; font-weight: bold');
     window.addEventListener('message', this.onMessage, false);
     vscode.postMessage({ command: 'getData' });
     this.setState({ interval: setInterval(this.saveScheduledChanges, 2000) });

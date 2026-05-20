@@ -27,7 +27,8 @@ function stripXsPrefix(t: string): string {
 function toTreeItem(node: XsdNode, pathPrefix?: string): TreeViewDataItem {
     const qualifiedPath = pathPrefix ? `${pathPrefix}|${node.path}` : node.path;
     return {
-        id: node.path || node.name,
+        // P4: incorporate sourceFile to avoid id collisions when two schemas share element paths
+        id: `${node.sourceFile}|${node.path || node.name}`,
         name: (
             <span
                 className="schema-node-label"

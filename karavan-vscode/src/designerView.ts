@@ -19,6 +19,12 @@ import * as path from "path";
 import * as utils from "./utils";
 import {handleXmlmapperMessage} from "./xsltHandler";
 import {CamelDefinitionYaml} from "@karavan-core/api/CamelDefinitionYaml";
+
+const XMLMAPPER_MSG_TYPES = new Set([
+    'requestXsltContent', 'saveXsltContent', 'selectFile', 'requestXsdTree',
+    'requestWsdlSchema', 'listXsdFiles', 'requestXsdRoots', 'saveXsdContent',
+    'saveSchemaParam', 'requestXsltParse',
+]);
 import {Integration, KameletTypes, MetadataLabels} from "@karavan-core/model/IntegrationDefinition";
 import {getWebviewContent} from "./webviewContent";
 import {BeanFactoryDefinition} from "@karavan-core/model/CamelDefinition";
@@ -128,7 +134,11 @@ export class DesignerView {
             // Handle messages from the webview
             panel.webview.onDidReceiveMessage(
                 message => {
-                    if (message.type) return handleXmlmapperMessage(panel, message, fullPath);
+                    if (message.type && XMLMAPPER_MSG_TYPES.has(message.type)) {
+                        handleXmlmapperMessage(panel, message, fullPath)
+                            .catch(e => console.error('[XKaravan] message handler error:', e));
+                        return;
+                    }
                     switch (message.command) {
                         case 'save':
                             utils.save(message.relativePath, message.code);

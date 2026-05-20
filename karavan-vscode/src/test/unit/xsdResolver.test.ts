@@ -202,3 +202,61 @@ describe('buildXsdTree — malformed XML', () => {
         ).resolves.toBeDefined();
     });
 });
+
+// ─── rawSource ───────────────────────────────────────────────────────────────
+
+describe('buildXsdTree — rawSource', () => {
+    it('returns the UTF-8 content of the primary XSD file', async () => {
+        const xsdPath = path.join(FIXTURES, 'simple/Order.xsd');
+        const { rawSource } = await buildXsdTree(xsdPath, nodeReadFile);
+        const expected = (await fsPromises.readFile(xsdPath, 'utf8')).replace(/^﻿/, '');
+        expect(rawSource).toBe(expected);
+    });
+
+    it('rawSource contains the xs:schema declaration', async () => {
+        const { rawSource } = await buildXsdTree(
+            path.join(FIXTURES, 'simple/Order.xsd'),
+            nodeReadFile
+        );
+        expect(rawSource).toContain('xs:schema');
+    });
+
+    it('rawSource reflects the primary file only, not imported files', async () => {
+        const primaryPath = path.join(FIXTURES, 'imported/Root.xsd');
+        const { rawSource } = await buildXsdTree(primaryPath, nodeReadFile);
+        const primaryContent = (await fsPromises.readFile(primaryPath, 'utf8')).replace(/^﻿/, '');
+        expect(rawSource).toBe(primaryContent);
+    });
+
+    it('returns undefined rawSource when the primary file cannot be read', async () => {
+        const { rawSource } = await buildXsdTree(
+            '/nonexistent/path/Missing.xsd',
+            nodeReadFile
+        );
+        expect(rawSource).toBeUndefined();
+    });
+});
+
+describe('buildXsdTree — import-only wrapper (P17)', () => {
+    const wrapper = `${FIXTURES}/import-only/Wrapper.xsd`;
+
+    it('returns a non-empty tree for a schema with no own elements that only imports', async () => {
+        const { root } = await buildXsdTree(wrapper, nodeReadFile);
+        expect(root).toBeDefined();
+    });
+
+    it('surfaces the Address element from the imported schema', async () => {
+        const { root } = await buildXsdTree(wrapper, nodeReadFile);
+        // When the import chain yields exactly one element, root IS that element.
+        // When it yields multiple elements, root is a wrapper whose children are those elements.
+        const topLevelNames = root.children && root.name === 'Wrapper'
+            ? root.children.map((c) => c.name)
+            : [root.name];
+        expect(topLevelNames).toContain('Address');
+    });
+
+    it('emits no warnings for a valid import-only schema', async () => {
+        const { warnings } = await buildXsdTree(wrapper, nodeReadFile);
+        expect(warnings).toHaveLength(0);
+    });
+});

@@ -8,6 +8,8 @@ export const workspace = {
             return new Uint8Array(buf);
         },
     },
+    // P15: workspaceFolders used by resolveXsdTree / propertiesResolver boundary checks
+    workspaceFolders: [{ uri: { fsPath: '/workspace' } }],
 };
 
 export const Uri = {

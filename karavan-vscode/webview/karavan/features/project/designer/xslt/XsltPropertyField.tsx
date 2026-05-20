@@ -37,18 +37,23 @@ interface Props {
 export function XsltPropertyField({property, value, propertyChanged}: Props) {
     const fileSelectedPayload = useXsltStore((s) => s.fileSelectedPayload);
     const [modalOpen, setModalOpen] = useState(false);
+    const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
 
     useEffect(() => {
-        if (fileSelectedPayload?.propertyId === property.name) {
+        if (fileSelectedPayload?.propertyId === property.name &&
+            fileSelectedPayload?.requestId === pendingRequestId) {
             propertyChanged(property.name, fileSelectedPayload.storedPath);
             useXsltStore.getState().clearFileSelected();
+            setPendingRequestId(null);
         }
-    }, [fileSelectedPayload]);
+    }, [fileSelectedPayload, property.name, propertyChanged, pendingRequestId]);
 
     const handleFilePick = () => {
+        const requestId = crypto.randomUUID();
+        setPendingRequestId(requestId);
         const msg: WebviewToHostMessage = {
             type: 'selectFile',
-            requestId: crypto.randomUUID(),
+            requestId,
             version: 1,
             payload: {propertyId: property.name, currentValue: value ?? '', filter: 'xslt'},
         };
@@ -57,6 +62,8 @@ export function XsltPropertyField({property, value, propertyChanged}: Props) {
 
     const handleEdit = () => {
         if (value) {
+            useXsltStore.getState().clearXsltContent();
+            useXsltStore.getState().setLoading(true);
             const msg: WebviewToHostMessage = {
                 type: 'requestXsltContent',
                 requestId: crypto.randomUUID(),
@@ -69,7 +76,7 @@ export function XsltPropertyField({property, value, propertyChanged}: Props) {
     };
 
     const handleOpenMapper = () => {
-        if (value) useXsltMapperStore.getState().openMapper(value);
+        if (value) useXsltMapperStore.getState().openMapper(value, []);
     };
 
     return (

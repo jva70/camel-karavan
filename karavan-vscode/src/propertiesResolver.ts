@@ -17,7 +17,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 
-async function findPropertiesFile(startDir: string): Promise<{ filePath: string; dir: string } | null> {
+async function findPropertiesFile(startDir: string, boundary?: string): Promise<{ filePath: string; dir: string } | null> {
     let dir = startDir;
     for (;;) {
         const candidate = path.resolve(dir, 'application.properties');
@@ -26,7 +26,7 @@ async function findPropertiesFile(startDir: string): Promise<{ filePath: string;
             return { filePath: candidate, dir };
         } catch {
             const parent = path.dirname(dir);
-            if (parent === dir) return null;
+            if (parent === dir || (boundary !== undefined && dir === boundary)) return null;
             dir = parent;
         }
     }
@@ -35,7 +35,8 @@ async function findPropertiesFile(startDir: string): Promise<{ filePath: string;
 async function loadProjectRoots(workspaceRoot: string): Promise<Map<string, string>> {
     const roots = new Map<string, string>();
     try {
-        const found = await findPropertiesFile(workspaceRoot);
+        const boundary = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const found = await findPropertiesFile(workspaceRoot, boundary);
         if (!found) return roots;
         const data = await vscode.workspace.fs.readFile(vscode.Uri.file(found.filePath));
         const text = Buffer.from(data).toString('utf8');
@@ -64,10 +65,12 @@ async function loadProjectRoots(workspaceRoot: string): Promise<Map<string, stri
  */
 export async function makeStoredValue(absolutePath: string, workspaceRoot: string): Promise<string> {
     const roots = await loadProjectRoots(workspaceRoot);
-    for (const [key, val] of roots) {
-        if (val && absolutePath.startsWith(val)) {
-            return 'file:{{' + key + '}}' + absolutePath.slice(val.length);
-        }
+    const sorted = [...roots.entries()]
+        .filter(([, val]) => val && absolutePath.startsWith(val + path.sep))
+        .sort((a, b) => b[1].length - a[1].length);
+    if (sorted.length > 0) {
+        const [key, val] = sorted[0];
+        return 'file:{{' + key + '}}' + absolutePath.slice(val.length);
     }
     return 'file:' + absolutePath;
 }

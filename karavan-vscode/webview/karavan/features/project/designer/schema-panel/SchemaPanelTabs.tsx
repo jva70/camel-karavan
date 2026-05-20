@@ -22,12 +22,16 @@ import {
     Tab,
     Tabs,
     TabTitleText,
+    ToggleGroup,
+    ToggleGroupItem,
 } from '@patternfly/react-core';
+import Editor from '@monaco-editor/react';
 import { shallow } from 'zustand/shallow';
 import { useDesignerStore } from '../DesignerStore';
 import { EventBus, IntegrationUpdate } from '../utils/EventBus';
 import { useSchemaPanelStore } from './SchemaPanelStore';
 import { SchemaTreeView } from './SchemaTreeView';
+import { useTheme } from '@app/theme/ThemeContext';
 import type { SchemaTab } from '../../../../../../src/messages';
 import './SchemaPanelTabs.css';
 
@@ -38,10 +42,11 @@ function getStoredPath(params: Record<string, string>, tab: SchemaTab): string {
         case 'output':
             return params.outputSchema ?? params.variableSchema ?? '';
         case 'error':
-            // comma-separated list or single path
             return params.errorSchemas ?? params.errorSchema ?? '';
     }
 }
+
+// ── Tree view (unchanged from original) ─────────────────────────────────────
 
 interface TabContentProps {
     tab: SchemaTab;
@@ -104,18 +109,109 @@ function SchemaTabContent({ tab }: TabContentProps) {
     );
 }
 
+// ── Source view (rendered outside <Tabs>, fills remaining panel height) ──────
+
+function SchemaSourceView({ tab }: { tab: SchemaTab }) {
+    const tabState = useSchemaPanelStore((s) => s.tabs[tab]);
+    const { isDark } = useTheme();
+
+    if (tabState.state === 'idle') {
+        return (
+            <div className="schema-panel-idle">
+                <Content component="p">No schema assigned</Content>
+                <Content component="small">
+                    Set <code>parameters.{tab}Schema</code> in the Kamelet YAML or add an XSD file at{' '}
+                    <code>xsd/&#123;variableReceive&#125;.xsd</code> adjacent to the route file.
+                </Content>
+            </div>
+        );
+    }
+
+    if (tabState.state === 'loading') {
+        return (
+            <div className="schema-panel-loading">
+                <Skeleton height="20px" width="60%" />
+                <Skeleton height="20px" width="40%" style={{ marginTop: 8 }} />
+                <Skeleton height="20px" width="50%" style={{ marginTop: 8 }} />
+            </div>
+        );
+    }
+
+    if (tabState.trees.length === 0) {
+        return (
+            <div className="schema-panel-idle">
+                <Content component="p">No schema assigned</Content>
+                {tabState.warnings.length > 0 && (
+                    <Alert variant="warning" isInline title="Schema resolution warnings" className="schema-panel-warnings">
+                        <ul>
+                            {tabState.warnings.map((w, i) => (
+                                <li key={i}><strong>{w.code}</strong>{w.detail ? `: ${w.detail}` : ''} — {w.message}</li>
+                            ))}
+                        </ul>
+                    </Alert>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div className="schema-panel-source">
+            {tabState.warnings.length > 0 && (
+                <Alert
+                    variant="warning"
+                    isInline
+                    title="Schema resolution warnings"
+                    className="schema-panel-warnings schema-panel-warnings--source"
+                >
+                    <ul>
+                        {tabState.warnings.map((w, i) => (
+                            <li key={i}><strong>{w.code}</strong>{w.detail ? `: ${w.detail}` : ''} — {w.message}</li>
+                        ))}
+                    </ul>
+                </Alert>
+            )}
+            {tabState.trees.map((tree, i) => {
+                const src = tabState.rawSources[i];
+                const label = tabState.trees.length > 1 ? tree.sourceFile.split('/').pop() : undefined;
+                return (
+                    <div key={tree.sourceFile + i} className="schema-source-section">
+                        {label && <div className="schema-tree-label">{label}</div>}
+                        {src === undefined ? (
+                            <div className="schema-panel-loading">
+                                <Skeleton height="20px" width="60%" />
+                                <Skeleton height="20px" width="40%" style={{ marginTop: 8 }} />
+                                <Skeleton height="20px" width="50%" style={{ marginTop: 8 }} />
+                            </div>
+                        ) : (
+                            <Editor
+                                height="100%"
+                                language="xml"
+                                value={src}
+                                theme={isDark ? 'vs-dark' : 'vs'}
+                                options={{ readOnly: true, minimap: { enabled: false }, wordWrap: 'on', scrollBeyondLastLine: false }}
+                            />
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ── Panel ────────────────────────────────────────────────────────────────────
+
 export function SchemaPanelTabs() {
     const [selectedStep] = useDesignerStore((s) => [s.selectedStep], shallow);
 
-    const [activeTab, setActiveTab, requestXsdTree, invalidateAll, reset] = useSchemaPanelStore(
-        (s) => [s.activeTab, s.setActiveTab, s.requestXsdTree, s.invalidateAll, s.reset],
+    const [activeTab, setActiveTab, requestXsdTree, invalidateAll, reset, schemaViewMode, setSchemaViewMode] = useSchemaPanelStore(
+        (s) => [s.activeTab, s.setActiveTab, s.requestXsdTree, s.invalidateAll, s.reset, s.schemaViewMode, s.setSchemaViewMode],
         shallow,
     );
 
+    const activeTabState = useSchemaPanelStore((s) => s.tabs[activeTab]);
     const params: Record<string, string> = (selectedStep as any)?.parameters ?? {};
     const variableReceive: string = (selectedStep as any)?.variableReceive ?? '';
 
-    // When selectedStep changes, reset and request the active tab
     useEffect(() => {
         reset();
         if (selectedStep) {
@@ -124,7 +220,6 @@ export function SchemaPanelTabs() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [(selectedStep as any)?.uuid]);
 
-    // When active tab changes, request if not yet loaded
     const handleTabSelect = (_: React.MouseEvent, tab: string | number) => {
         const schemaTab = tab as SchemaTab;
         setActiveTab(schemaTab);
@@ -134,7 +229,6 @@ export function SchemaPanelTabs() {
         }
     };
 
-    // Auto-refresh on YAML save
     useEffect(() => {
         const sub = EventBus.onIntegrationUpdate().subscribe((update: IntegrationUpdate) => {
             if (!update.propertyOnly) {
@@ -144,14 +238,17 @@ export function SchemaPanelTabs() {
         return () => sub.unsubscribe();
     }, [invalidateAll]);
 
+    const isSource = schemaViewMode === 'source';
+
     return (
-        <div className="schema-panel-tabs">
-            <Tabs
-                activeKey={activeTab}
-                onSelect={handleTabSelect}
-                isFilled
-                aria-label="Schema tabs"
-            >
+        <div className={`schema-panel-tabs${isSource ? ' schema-panel-tabs--source' : ''}`}>
+            {activeTabState.state === 'ready' && (
+                <ToggleGroup aria-label="Schema view mode" className="schema-view-toggle">
+                    <ToggleGroupItem text="Tree" isSelected={!isSource} onChange={() => setSchemaViewMode('tree')} />
+                    <ToggleGroupItem text="Source" isSelected={isSource} onChange={() => setSchemaViewMode('source')} />
+                </ToggleGroup>
+            )}
+            <Tabs activeKey={activeTab} onSelect={handleTabSelect} isFilled aria-label="Schema tabs">
                 <Tab eventKey="input" title={<TabTitleText>Input</TabTitleText>}>
                     <SchemaTabContent tab="input" />
                 </Tab>
@@ -162,6 +259,7 @@ export function SchemaPanelTabs() {
                     <SchemaTabContent tab="error" />
                 </Tab>
             </Tabs>
+            {isSource && <SchemaSourceView tab={activeTab} />}
         </div>
     );
 }

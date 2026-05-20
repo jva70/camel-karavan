@@ -104,7 +104,7 @@ export type HostToWebviewMessage =
         type: 'xsdTree';
         requestId: string;
         version: 1;
-        payload: { tab: SchemaTab; tree: XsdNode; warnings: Warning[] };
+        payload: { tab: SchemaTab; tree: XsdNode; warnings: Warning[]; rawSource?: string };
     }
     | {
         type: 'wsdlSchema';

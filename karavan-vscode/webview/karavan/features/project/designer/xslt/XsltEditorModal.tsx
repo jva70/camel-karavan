@@ -14,9 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import Editor from '@monaco-editor/react';
-import {Button} from '@patternfly/react-core';
+import {Button, Spinner} from '@patternfly/react-core';
 import {useXsltStore} from './XsltStore';
 import {useTheme} from '@app/theme/ThemeContext';
 import vscode from '@/vscode';
@@ -41,9 +41,17 @@ interface Props {
 
 export function XsltEditorModal({storedPath, onClose}: Props) {
     const {isDark} = useTheme();
-    const [xsltContent, resolvedPath] = useXsltStore((s) => [s.xsltContent, s.resolvedPath]);
+    const [xsltContent, resolvedPath, loading] = useXsltStore((s) => [s.xsltContent, s.resolvedPath, s.loading]);
     const [editedContent, setEditedContent] = useState<string | undefined>(undefined);
     const [layout, setLayout] = useState(loadLayout);
+    // Snapshot resolvedPath at first load to prevent wrong-file overwrites if store updates while modal is open
+    const resolvedPathRef = useRef<string>('');
+
+    useEffect(() => {
+        if (resolvedPath && !resolvedPathRef.current) {
+            resolvedPathRef.current = resolvedPath;
+        }
+    }, [resolvedPath]);
 
     useEffect(() => {
         setEditedContent(xsltContent || '');
@@ -56,12 +64,12 @@ export function XsltEditorModal({storedPath, onClose}: Props) {
     }, [layout]);
 
     const save = () => {
-        if (resolvedPath && editedContent !== undefined) {
+        if (resolvedPathRef.current && editedContent !== undefined) {
             const msg: WebviewToHostMessage = {
                 type: 'saveXsltContent',
                 requestId: crypto.randomUUID(),
                 version: 1,
-                payload: {resolvedPath, content: editedContent},
+                payload: {resolvedPath: resolvedPathRef.current, content: editedContent},
             };
             vscode.postMessage(msg);
         }
@@ -75,7 +83,9 @@ export function XsltEditorModal({storedPath, onClose}: Props) {
                 style={{width: layout.width, height: layout.height}}
                 onMouseUp={(e) => {
                     const el = e.currentTarget;
-                    setLayout({width: el.offsetWidth, height: el.offsetHeight});
+                    if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+                        setLayout({width: el.offsetWidth, height: el.offsetHeight});
+                    }
                 }}
             >
                 <div className="xslt-modal-header">
@@ -85,17 +95,20 @@ export function XsltEditorModal({storedPath, onClose}: Props) {
                     <Button variant="plain" aria-label="Close" onClick={onClose}>×</Button>
                 </div>
                 <div className="xslt-modal-body">
-                    <Editor
-                        height="100%"
-                        language="xml"
-                        value={editedContent}
-                        theme={isDark ? 'vs-dark' : 'vs'}
-                        onChange={(val) => setEditedContent(val ?? '')}
-                        options={{minimap: {enabled: false}, wordWrap: 'on', scrollBeyondLastLine: false}}
-                    />
+                    {loading
+                        ? <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'}}><Spinner size="lg" /></div>
+                        : <Editor
+                            height="100%"
+                            language="xml"
+                            value={editedContent}
+                            theme={isDark ? 'vs-dark' : 'vs'}
+                            onChange={(val) => setEditedContent(val ?? '')}
+                            options={{minimap: {enabled: false}, wordWrap: 'on', scrollBeyondLastLine: false}}
+                        />
+                    }
                 </div>
                 <div className="xslt-modal-footer">
-                    <Button variant="primary" onClick={save}>Save</Button>
+                    <Button variant="primary" isDisabled={loading} onClick={save}>Save</Button>
                     <Button variant="link" onClick={onClose}>Cancel</Button>
                 </div>
             </div>

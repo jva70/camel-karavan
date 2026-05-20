@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P17: import-only wrapper — no own top-level elements; all elements come from the import chain -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:addr="http://example.com/address">
+
+    <xs:import namespace="http://example.com/address" schemaLocation="../imported/AddressTypes.xsd"/>
+
+</xs:schema>
