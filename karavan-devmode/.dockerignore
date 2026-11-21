@@ -1,0 +1,7 @@
+*
+!target/lib/*
+!target/karavan-devmode-*.jar
+!settings.xml
+!entrypoint.sh
+!scripts/utils-*.sh
+src/*

@@ -27,7 +27,7 @@ import {
     TextInputGroupMain,
     TextInputGroupUtilities
 } from '@patternfly/react-core';
-import TimesIcon from "@patternfly/react-icons/dist/esm/icons/times-icon";
+import {TimesIcon} from "@patternfly/react-icons";
 
 interface Props {
     value?: any,
@@ -41,7 +41,6 @@ export function FieldSelectScrollable(props: Props) {
 
     const {onChange, value, selectOptions,placeholder} = props;
     const [isOpen, setIsOpen] = useState(false);
-    const [isUserInput, setIsUserInput] = React.useState(false);
     const [inputValue, setInputValue] = React.useState<string>();
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -61,7 +60,6 @@ export function FieldSelectScrollable(props: Props) {
                     onClick={() => setIsOpen(true)}
                     onChange={(_, val) => {
                         setInputValue(val)
-                        setIsUserInput(true)
                     }}
                     // onKeyDown={onInputKeyDown}
                     id="variables-dropdown-input"
@@ -80,7 +78,6 @@ export function FieldSelectScrollable(props: Props) {
             return;
         }
         setInputValue(itemId)
-        setIsUserInput(true)
         onChange?.(itemId);
         setIsOpen(!isOpen);
     };
@@ -113,7 +110,6 @@ export function FieldSelectScrollable(props: Props) {
                         onClick={e => {
                             onChange?.(undefined)
                             setInputValue(undefined)
-                            setIsUserInput(true)
                         }} aria-label="Delete"/>
             </TextInputGroupUtilities>
         </TextInputGroup>

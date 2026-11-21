@@ -17,13 +17,10 @@
 
 import React, {ReactElement} from 'react';
 import {Button} from '@patternfly/react-core';
-import UpIcon from "@patternfly/react-icons/dist/esm/icons/running-icon";
-import DownIcon from "@patternfly/react-icons/dist/esm/icons/error-circle-o-icon";
+import {BuildIcon, DevIcon, ErrorCircleOIcon, LockIcon, PackageIcon, RunningIcon, UnknownIcon} from "@patternfly/react-icons";
 import {useSelectedContainerStore} from "@stores/ProjectStore";
 import {ContainerStatus, ContainerType} from '@models/ProjectModels';
-import DevIcon from "@patternfly/react-icons/dist/esm/icons/dev-icon";
 import './ContainerButton.css'
-import {BuildIcon, LockIcon, PackageIcon, UnknownIcon} from '@patternfly/react-icons';
 
 interface Props {
     container: ContainerStatus,
@@ -37,7 +34,7 @@ export function ContainerButton(props: Props) {
     const buttonClassName = isRunning ? "karavan-container-button-up" : "karavan-container-button-down";
     const iconClassName = isRunning ? "karavan-container-button-icon-up" : "karavan-container-button-icon-down";
     const buttonVariant = isRunning ? "secondary" : "tertiary";
-    const icon = isRunning ? <UpIcon className={iconClassName}/> : <DownIcon color={'var(--pf-v6-c-button--m-control--Color)'}/>;
+    const icon = isRunning ? <RunningIcon className={iconClassName}/> : <ErrorCircleOIcon color={'var(--pf-v6-c-button--m-control--Color)'}/>;
     const typeIconColor = isRunning ? 'var(--pf-t--global--color--status--success--100)' : 'var(--pf-v6-c-button--m-control--Color)';
     const iconMap: Record<ContainerType, ReactElement> = {
         devmode: <DevIcon color={typeIconColor}/>,
@@ -46,18 +43,11 @@ export function ContainerButton(props: Props) {
         build: <BuildIcon color={typeIconColor}/>,
         unknown: <UnknownIcon color={typeIconColor}/>,
     };
-    const typeMap: Record<ContainerType, string> = {
-        devmode: 'container',
-        packaged: 'container',
-        internal: 'internal',
-        build: 'build',
-        unknown: 'unknown',
-    };
     const type: ContainerType = container?.type || 'unknown';
     const typeIcon = iconMap[type];
 
     return (
-        <Button variant={buttonVariant} icon={icon}
+        <Button variant={buttonVariant} icon={icon} size={"sm"}
                 className={buttonClassName}
                 onClick={e => {
                     setSelectedContainerName(container.containerName);

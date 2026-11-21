@@ -26,9 +26,6 @@ public class KaravanEvents {
     public static final String COMMIT_HAPPENED = "COMMIT_HAPPENED";
     public static final String NOTIFICATION_IMAGES_LOADED = "NOTIFICATION_IMAGES_LOADED";
 
-    public static final String CMD_SHARE_CONFIGURATION = "CMD_SHARE_CONFIGURATION";
-    public static final String NOTIFICATION_CONFIG_SHARED = "NOTIFICATION_CONFIG_SHARED";
-
     public static final String NOTIFICATION_ERROR = "NOTIFICATION_ERROR";
 
     public static final String CMD_COLLECT_CAMEL_STATUS = "CMD_COLLECT_CAMEL_STATUS";
@@ -55,6 +52,7 @@ public class KaravanEvents {
     public static final String SERVICE_UPDATED = "SERVICE_UPDATED";
     public static final String SERVICE_DELETED = "SERVICE_DELETED";
 
+
     public static final String ON_USER_ACTIVITY = "ON_USER_ACTIVITY";
     public static final String ON_PROJECT_ACTIVITY = "ON_PROJECT_ACTIVITY";
     public static final String ON_CONTAINER_ACTIVITY = "ON_CONTAINER_ACTIVITY";
@@ -62,5 +60,7 @@ public class KaravanEvents {
     public static final String PERSIST_PROJECT = "PERSIST_PROJECT";
     public static final String PERSIST_ACCESS = "PERSIST_ACCESS";
     public static final String PERSIST_SESSION = "PERSIST_SESSION";
+
+    public static final String FILE_CHANGED = "FILE_CHANGED";
 
 }

@@ -1,0 +1,66 @@
+name: Karavan Devmode
+
+on:
+  push:
+    branches: [ main ]
+    paths: ['karavan-devmode/*', '.github/workflows/devmode.yml']
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-devmode
+  TAG: 4.22.2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/org/apache/camel
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      - name: Build Karavan DevMode Application
+        working-directory: ./karavan-devmode
+        run: mvn clean package
+
+      # Ubuntu 26.04+ (ubuntu-latest) turned qemu-user-static into a virtual package;
+      # the arm64 emulator and its binfmt_misc registration now come from qemu-user-binfmt.
+      - name: Set up QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-binfmt
+          cat /proc/sys/fs/binfmt_misc/qemu-aarch64
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use
+
+      - name: Log in to the Container registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push Devmode image
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file ./karavan-devmode/Dockerfile \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }} \
+            --push \
+            --no-cache \
+            --sbom=true \
+            --provenance=mode=max \
+            ./karavan-devmode

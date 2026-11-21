@@ -31,16 +31,18 @@
       "@shared/*": ["webview/karavan/shared/*"],
       "@stores/*": ["webview/karavan/stores/*"],
       "@util/*": ["webview/karavan/util/*"],
-      "@karavan-core/*": ["webview/karavan-core/*"]
+      "@karavan-core/*": ["webview/karavan-core/*"],
+      "@core/*": ["webview/karavan-core/*"]
     },
     "importHelpers": true,
     "skipLibCheck": true
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.jsx",
-    "**/*.js"
+    "src/**/*.ts",
+    "webview/**/*.ts",
+    "webview/**/*.tsx",
+    "webview/**/*.jsx",
+    "webview/**/*.js"
   ],
-  "exclude": ["node_modules", ".vscode-test"]
+  "exclude": ["node_modules", "dist", "out", ".vscode-test", "webpack.config.js"]
 }

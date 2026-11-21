@@ -1,5 +1,24 @@
 # Changelog
 
+## XKaravan 4.22.2
+- Merged Apache Camel Karavan upstream 4.22.2
+- Fork additions kept: XSLT visual mapper, Kamelet/XSD schema panels, onException support
+
+## 4.22.2
+0. Camel 4.22.2
+1. Fix designer stuck on loading when built-in Kamelets are missing
+2. Designer styling follows the VS Code theme
+3. Default Camel version setting updated to 4.22.2
+4. Default runtime versions: Quarkus platform 3.39.5, Camel Spring Boot 4.22.2, Spring Boot 4.1.1
+5. Omit `-Dcamel.jbang.version` when the Camel version setting is empty (#1663)
+6. Remove the "project" Kamelet badge and filter from the component selector
+
+## 4.22.1
+0. Camel 4.22.1
+3. Jkube 1.19.0
+4. JBang v0.141.0
+4. Quarkus 3.33.3.1
+
 ## XKaravan 4.18.1
 - Fork base: Apache Camel Karavan 4.18.1
 - Adds XSLT visual mapper and Kamelet schema panels

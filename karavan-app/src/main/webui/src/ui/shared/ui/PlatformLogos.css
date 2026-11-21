@@ -1,3 +1,15 @@
+.platform-name-compass-wrapper {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    .platform-name-compass {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: flex-start;
+        gap: 1px;
+    }
+}
 .platform-name-toolbar-wrapper {
     display: flex;
     flex-direction: row;
@@ -10,22 +22,6 @@
         justify-content: flex-start;
         align-items: flex-start;
         gap: 1px;
-
-        .powered-by-badge {
-            font-size: 12px;
-            font-family: var(--pf-t--global--font--family--200);
-            padding: 0;
-            color: transparent;
-            background-clip: text;
-            background-image: linear-gradient(to right,
-            /*rgba(0, 102, 204, 1) 0%,*/
-            /*rgba(67, 148, 229, 1) 25%,*/
-            rgb(67, 148, 229),
-            rgb(253, 164, 34),
-            rgb(253, 164, 34),
-            rgb(219, 91, 4)
-            );
-        }
     }
 }
 

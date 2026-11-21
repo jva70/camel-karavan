@@ -20,6 +20,7 @@ import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
+import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import io.quarkus.runtime.LaunchMode;
@@ -27,24 +28,24 @@ import io.smallrye.mutiny.tuples.Tuple2;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Produces;
-import jakarta.inject.Inject;
 import org.apache.camel.karavan.KaravanConstants;
 import org.apache.camel.karavan.cache.ContainerType;
 import org.apache.camel.karavan.model.KubernetesConfigMap;
 import org.apache.camel.karavan.model.KubernetesSecret;
 import org.apache.camel.karavan.model.PodEvent;
-import org.apache.camel.karavan.service.CodeService;
 import org.apache.camel.karavan.service.ConfigService;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.camel.karavan.KaravanConstants.*;
-import static org.apache.camel.karavan.service.CodeService.BUILD_SCRIPT_FILENAME;
+import static org.apache.camel.karavan.service.CodeService.CAMEL_OBSERVABILITY_PORT;
 
 @Default
 @ApplicationScoped
@@ -52,11 +53,19 @@ public class KubernetesService {
 
     private static final Logger LOGGER = Logger.getLogger(KubernetesService.class.getName());
 
+    // Kinds accepted in the user editable kubernetes.yaml resource file of a project.
+    // Anything else (Pod, DaemonSet, ClusterRoleBinding, ...) is rejected before reaching the API server.
+    public static final String DEFAULT_ALLOWED_DEPLOYMENT_KINDS = "Deployment,Service,ConfigMap,Secret";
+
+    public static final Map<String, Quantity> DEFAULT_CONTAINER_RESOURCES = Map.of(
+            "requests.memory", new Quantity("256Mi"),
+            "requests.cpu", new Quantity("500m"),
+            "limits.memory", new Quantity("2048Mi"),
+            "limits.cpu", new Quantity("2000m")
+    );
+
     @ConfigProperty(name = "karavan.environment", defaultValue = KaravanConstants.DEV)
     private String environment;
-
-    @Inject
-    CodeService codeService;
 
     private String namespace;
 
@@ -89,30 +98,13 @@ public class KubernetesService {
     @ConfigProperty(name = "karavan.openshift")
     Optional<Boolean> isOpenShift;
 
-    public void createConfigmap(String name, Map<String, String> data) {
-        LOGGER.info("Creating configmap " + name);
-        if (ConfigService.inKubernetes()) {
-            try (KubernetesClient client = kubernetesClient()) {
-                ConfigMap configMap = client.configMaps().inNamespace(getNamespace()).withName(name).get();
-                if (configMap == null) {
-                    configMap = new ConfigMapBuilder()
-                            .withMetadata(new ObjectMetaBuilder()
-                                    .withName(name)
-                                    .withLabels(getPartOfLabels())
-                                    .withNamespace(getNamespace())
-                                    .build())
-                            .build();
-                    configMap.setData(data);
-                    client.resource(configMap).create();
-                } else {
-                    configMap.setData(data);
-                    client.resource(configMap).update();
-                }
+    // Extend only together with the matching Kubernetes RBAC permissions, e.g. "Route" on OpenShift
+    @ConfigProperty(name = "karavan.deployment.allowed-kinds", defaultValue = DEFAULT_ALLOWED_DEPLOYMENT_KINDS)
+    String allowedDeploymentKinds;
 
-            } catch (Exception e) {
-                LOGGER.error("Error create Configmap: " + e.getMessage());
-            }
-        }
+    private Set<String> getAllowedDeploymentKinds() {
+        return Arrays.stream(allowedDeploymentKinds.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet());
     }
 
     public void runBuildProject(String projectId, String podFragment, Map<String, String> envVars) {
@@ -123,7 +115,7 @@ public class KubernetesService {
 //        Delete old build pod
             Pod old = client.pods().inNamespace(getNamespace()).withName(containerName).get();
             if (old != null) {
-                client.resource(old).delete();
+                client.resource(old).delete().wait(60000);
             }
             boolean hasDockerConfigSecret = hasDockerConfigSecret();
             Pod pod = getBuilderPod(containerName, labels, podFragment, hasDockerConfigSecret, envVars);
@@ -162,7 +154,6 @@ public class KubernetesService {
         return labels;
     }
 
-    // TODO: Move all possible stuff to pod fragment
     private Pod getBuilderPod(String name, Map<String, String> labels, String configFragment, boolean hasDockerConfigSecret, Map<String, String> envVars) {
         ObjectMeta meta = new ObjectMetaBuilder()
                 .withName(name)
@@ -170,14 +161,10 @@ public class KubernetesService {
                 .withNamespace(getNamespace())
                 .build();
 
-        ContainerPort port = new ContainerPortBuilder()
-                .withContainerPort(8080)
-                .withName("http")
-                .withProtocol("TCP")
-                .build();
+        ContainerPort port = new ContainerPortBuilder().withContainerPort(8080).withName("http").withProtocol("TCP").build();
+        ContainerPort observabilityPort = new ContainerPortBuilder().withContainerPort(CAMEL_OBSERVABILITY_PORT).withName("observability").withProtocol("TCP").build();
 
         List<VolumeMount> volumeMounts = new ArrayList<>();
-        volumeMounts.add(new VolumeMountBuilder().withName(BUILD_SCRIPT_VOLUME_NAME).withMountPath("/karavan/builder").withReadOnly(true).build());
         if (hasDockerConfigSecret) {
             volumeMounts.add(new VolumeMountBuilder().withName(BUILD_DOCKER_CONFIG_SECRET).withMountPath("/karavan/.docker").withReadOnly(true).build());
         }
@@ -194,33 +181,28 @@ public class KubernetesService {
         Container container = new ContainerBuilder()
                 .withName(name)
                 .withImage(devmodeImage)
-                .withPorts(port)
+                .withPorts(port, observabilityPort)
                 .withImagePullPolicy(devmodeImagePullPolicy.orElse("IfNotPresent"))
                 .withEnv(pod.getSpec().getContainers().getFirst().getEnv())
-                .withCommand("/bin/sh", "-c", "/karavan/builder/build.sh")
                 .withVolumeMounts(volumeMounts)
                 .build();
 
         List<Volume> volumes = new ArrayList<>();
-        volumes.add(new VolumeBuilder().withName(BUILD_SCRIPT_VOLUME_NAME)
-                .withConfigMap(new ConfigMapVolumeSourceBuilder().withName(BUILD_SCRIPT_CONFIG_MAP).withItems(
-                        new KeyToPathBuilder().withKey(BUILD_SCRIPT_FILENAME).withPath(BUILD_SCRIPT_FILENAME).build()
-                ).withDefaultMode(511).build()).build());
         if (hasDockerConfigSecret) {
             volumes.add(new VolumeBuilder().withName(BUILD_DOCKER_CONFIG_SECRET)
                     .withSecret(new SecretVolumeSourceBuilder().withSecretName(BUILD_DOCKER_CONFIG_SECRET).withItems(
                             new KeyToPathBuilder().withKey(".dockerconfigjson").withPath("config.json").build()
-                    ).withDefaultMode(511).build()).build());
+                    ).withDefaultMode(600).build()).build());
         }
         if (privateKeyPath.isPresent()) {
             volumes.add(new VolumeBuilder().withName(PRIVATE_KEY_SECRET_KEY)
                     .withSecret(new SecretVolumeSourceBuilder().withSecretName(secretName).withItems(
                             new KeyToPathBuilder().withKey(PRIVATE_KEY_SECRET_KEY).withPath("id_rsa").build()
-                    ).withDefaultMode(511).build()).build());
+                    ).withDefaultMode(600).build()).build());
             volumes.add(new VolumeBuilder().withName(KNOWN_HOSTS_SECRET_KEY)
                     .withSecret(new SecretVolumeSourceBuilder().withSecretName(secretName).withItems(
                             new KeyToPathBuilder().withKey(KNOWN_HOSTS_SECRET_KEY).withPath("known_hosts").build()
-                    ).withDefaultMode(511).build()).build());
+                    ).withDefaultMode(600).build()).build());
         }
 
         PodSpec spec = new PodSpecBuilder()
@@ -248,6 +230,19 @@ public class KubernetesService {
 
     public Tuple2<LogWatch, KubernetesClient> getContainerLogWatch(String podName) {
         KubernetesClient client = kubernetesClient();
+        try {
+            // Wait up to 30 seconds for the pod to leave the 'Pending' phase (ContainerCreating)
+            client.pods().inNamespace(getNamespace()).withName(podName)
+                    .waitUntilCondition(pod -> pod != null &&
+                                    ("Running".equals(pod.getStatus().getPhase()) ||
+                                            "Succeeded".equals(pod.getStatus().getPhase()) ||
+                                            "Failed".equals(pod.getStatus().getPhase())),
+                            30, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            LOGGER.warn("Timeout or error waiting for pod " + podName + " to become ready: " + e.getMessage());
+            // Proceeding anyway so we don't completely block log attempts if the condition logic fails
+        }
+
         LogWatch logWatch = client.pods().inNamespace(getNamespace()).withName(podName).tailingLines(100).watchLog();
         return Tuple2.of(logWatch, client);
     }
@@ -256,24 +251,107 @@ public class KubernetesService {
         try (KubernetesClient client = kubernetesClient()) {
             client.apps().deployments().inNamespace(getNamespace()).withName(name).rolling().restart();
         } catch (Exception ex) {
-            LOGGER.error(ex.getMessage());
+            LOGGER.error("Failed to apply Kubernetes resources", ex);
         }
     }
 
-    public void startDeployment(String resources, Map<String, String> labels) {
+    public void startDeployment(String resources) {
+        KubernetesList list;
+        try {
+            list = Serialization.unmarshal(resources, KubernetesList.class);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid Kubernetes resources: " + e.getMessage());
+        }
+        if (list == null || list.getItems() == null || list.getItems().isEmpty()) {
+            throw new IllegalArgumentException("No Kubernetes resources to apply");
+        }
+        // The resource file is user editable, so it can not be trusted: only the resource kinds
+        // an integration is made of are accepted, and pod specs must not ask for host level access.
+        Set<String> allowedKinds = getAllowedDeploymentKinds();
+        list.getItems().forEach(item -> validateDeploymentResource(item, allowedKinds));
         try (KubernetesClient client = kubernetesClient()) {
-            KubernetesList list = Serialization.unmarshal(resources, KubernetesList.class);
             list.getItems().forEach(item -> {
-                if (labels != null ) {
-                    item.getMetadata().getLabels().putAll(labels);
-                    if (item instanceof Deployment deployment) {
-                        deployment.getSpec().getTemplate().getMetadata().getLabels().putAll(labels);
-                    }
-                }
+//                if (labels != null) {
+//                    putLabels(item.getMetadata(), labels);
+//                    if (item instanceof Deployment deployment && deployment.getSpec() != null && deployment.getSpec().getTemplate() != null) {
+//                        var template = deployment.getSpec().getTemplate();
+//                        if (template.getMetadata() == null) {
+//                            template.setMetadata(new ObjectMeta());
+//                        }
+//                        putLabels(template.getMetadata(), labels);
+//                    }
+//                }
+                item.getMetadata().setNamespace(getNamespace());
                 client.resource(item).inNamespace(getNamespace()).serverSideApply();
             });
         } catch (Exception ex) {
-            LOGGER.error(ex.getMessage());
+            LOGGER.error("Failed to apply Kubernetes resources", ex);
+        }
+    }
+
+    private static void putLabels(ObjectMeta meta, Map<String, String> labels) {
+        if (meta.getLabels() == null) {
+            meta.setLabels(new HashMap<>());
+        }
+        meta.getLabels().putAll(labels);
+    }
+
+    static void validateDeploymentResource(HasMetadata item, Set<String> allowedKinds) {
+        String kind = item.getKind();
+        if (!allowedKinds.contains(kind)) {
+            throw new IllegalArgumentException("Resource kind is not allowed: " + kind
+                    + ". Allowed kinds: " + String.join(", ", allowedKinds));
+        }
+        if (item.getMetadata() == null || item.getMetadata().getName() == null) {
+            throw new IllegalArgumentException("Resource of kind " + kind + " has no metadata.name");
+        }
+        if (item instanceof Deployment deployment && deployment.getSpec() != null && deployment.getSpec().getTemplate() != null) {
+            validatePodSpec(deployment.getSpec().getTemplate().getSpec());
+        }
+    }
+
+    private static void validatePodSpec(PodSpec spec) {
+        if (spec == null) {
+            return;
+        }
+        if (Boolean.TRUE.equals(spec.getHostNetwork())) {
+            throw new IllegalArgumentException("hostNetwork is not allowed");
+        }
+        if (Boolean.TRUE.equals(spec.getHostPID())) {
+            throw new IllegalArgumentException("hostPID is not allowed");
+        }
+        if (Boolean.TRUE.equals(spec.getHostIPC())) {
+            throw new IllegalArgumentException("hostIPC is not allowed");
+        }
+        if (spec.getVolumes() != null) {
+            spec.getVolumes().stream().filter(v -> v.getHostPath() != null).findFirst().ifPresent(v -> {
+                throw new IllegalArgumentException("hostPath volume is not allowed: " + v.getName());
+            });
+        }
+        Stream.concat(
+                spec.getContainers() != null ? spec.getContainers().stream() : Stream.empty(),
+                spec.getInitContainers() != null ? spec.getInitContainers().stream() : Stream.empty()
+        ).forEach(KubernetesService::validateContainer);
+    }
+
+    private static void validateContainer(Container container) {
+        SecurityContext securityContext = container.getSecurityContext();
+        if (securityContext != null) {
+            if (Boolean.TRUE.equals(securityContext.getPrivileged())) {
+                throw new IllegalArgumentException("privileged container is not allowed: " + container.getName());
+            }
+            if (Boolean.TRUE.equals(securityContext.getAllowPrivilegeEscalation())) {
+                throw new IllegalArgumentException("allowPrivilegeEscalation is not allowed: " + container.getName());
+            }
+            if (securityContext.getCapabilities() != null && securityContext.getCapabilities().getAdd() != null
+                    && !securityContext.getCapabilities().getAdd().isEmpty()) {
+                throw new IllegalArgumentException("adding Linux capabilities is not allowed: " + container.getName());
+            }
+        }
+        if (container.getPorts() != null) {
+            container.getPorts().stream().filter(p -> p.getHostPort() != null).findFirst().ifPresent(p -> {
+                throw new IllegalArgumentException("hostPort is not allowed: " + container.getName());
+            });
         }
     }
 
@@ -282,6 +360,7 @@ public class KubernetesService {
             LOGGER.info("Delete deployment: " + name + " in the namespace: " + getNamespace());
             client.apps().deployments().inNamespace(getNamespace()).withName(name).delete();
             client.services().inNamespace(getNamespace()).withName(name).delete();
+            client.configMaps().inNamespace(getNamespace()).withName(name).delete();
         } catch (Exception ex) {
             LOGGER.error(ex.getMessage());
         }
@@ -340,7 +419,7 @@ public class KubernetesService {
         return result;
     }
 
-    public void runDevModeContainer(String projectId, Boolean verbose, Boolean compile, Map<String, String> files, String projectDevmodeImage, String deploymentFragment, Map<String, String> labels, Map<String, String> envVars) {
+    public void runDevModeContainer(String projectId, Boolean verbose, Boolean compile, String projectDevmodeImage, String deploymentFragment, Map<String, String> labels, Map<String, String> envVars) {
         Map<String, String> podLabels = new HashMap<>(labels);
         podLabels.putAll(getLabels(projectId, projectId, ContainerType.devmode));
 
@@ -351,30 +430,10 @@ public class KubernetesService {
             Pod old = client.pods().inNamespace(getNamespace()).withName(projectId).get();
             if (old == null) {
                 Pod pod = getDevModePod(projectId, verbose, compile, podLabels, projectDevmodeImage, deploymentFragment, envVars);
-                Pod result = client.resource(pod).serverSideApply(); // important
-                result = client.pods().inNamespace(getNamespace()).withName(projectId).waitUntilReady(30, TimeUnit.SECONDS);
-                LOGGER.info("Pod " + result.getMetadata().getName() + " status " + result.getStatus());
-                var copyFiles = copyFilesToContainer(result, files, "/karavan/code");
-                LOGGER.info("Pod files copy result is " + copyFiles);
-                var copyDone = copyFilesToContainer(result, Map.of(".karavan.done", "done"), "/tmp");
-                LOGGER.info("Pod files copy done is " + copyDone);
-                LOGGER.info("Pod pod " + result.getMetadata().getName());
+                client.resource(pod).serverSideApply();
             }
         }
         createService(projectId, podLabels);
-    }
-
-    private boolean copyFilesToContainer(Pod pod, Map<String, String> files, String dirName) {
-        try (KubernetesClient client = kubernetesClient()) {
-            String temp = codeService.saveProjectFilesInTemp(files);
-            return client.pods().inNamespace(getNamespace())
-                    .withName(pod.getMetadata().getName())
-                    .dir(dirName)
-                    .upload(Paths.get(temp));
-        } catch (Exception e) {
-            LOGGER.info("Error copying filed to devmode pod: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
-            return false;
-        }
     }
 
     public void deletePodAndService(String name, boolean deletePVC) {
@@ -389,13 +448,30 @@ public class KubernetesService {
             LOGGER.error(ex.getMessage());
         }
     }
+    private Map<String, Quantity> getResourceLimits(PodSpec podSpec) {
+        try {
+            return podSpec.getContainers().get(0).getResources().getLimits();
+        } catch (Exception e) {
+            return new HashMap<>();
+        }
+    }
 
-    public ResourceRequirements getResourceRequirements(Map<String, String> containerResources) {
+    private Map<String, Quantity> getResourceRequests(PodSpec podSpec) {
+        try {
+            return podSpec.getContainers().get(0).getResources().getRequests();
+        } catch (Exception e) {
+            return new HashMap<>();
+        }
+    }
+
+    public ResourceRequirements getResourceRequirements(PodSpec podSpec) {
+        var limits = getResourceLimits(podSpec);
+        var requests = getResourceRequests(podSpec);
         return new ResourceRequirementsBuilder()
-                .addToRequests("cpu", new Quantity(containerResources.get("requests.cpu")))
-                .addToRequests("memory", new Quantity(containerResources.get("requests.memory")))
-                .addToLimits("cpu", new Quantity(containerResources.get("limits.cpu")))
-                .addToLimits("memory", new Quantity(containerResources.get("limits.memory")))
+                .addToRequests("cpu", requests.getOrDefault("cpu", DEFAULT_CONTAINER_RESOURCES.get("requests.cpu")))
+                .addToRequests("memory", requests.getOrDefault("memory", DEFAULT_CONTAINER_RESOURCES.get("requests.memory")))
+                .addToLimits("cpu", limits.getOrDefault("cpu", DEFAULT_CONTAINER_RESOURCES.get("limits.cpu")))
+                .addToLimits("memory", limits.getOrDefault("memory", DEFAULT_CONTAINER_RESOURCES.get("limits.memory")))
                 .build();
     }
 
@@ -413,8 +489,7 @@ public class KubernetesService {
             volumeMounts = podSpec.getContainers().getFirst().getVolumeMounts();
         } catch (Exception ignored) {}
 
-        Map<String, String> containerResources = CodeService.DEFAULT_CONTAINER_RESOURCES;
-        ResourceRequirements resources = getResourceRequirements(containerResources);
+        ResourceRequirements resources = getResourceRequirements(podSpec);
 
         ObjectMeta meta = new ObjectMetaBuilder()
                 .withName(name)
@@ -422,11 +497,8 @@ public class KubernetesService {
                 .withNamespace(getNamespace())
                 .build();
 
-        ContainerPort port = new ContainerPortBuilder()
-                .withContainerPort(8080)
-                .withName("http")
-                .withProtocol("TCP")
-                .build();
+        ContainerPort port = new ContainerPortBuilder().withContainerPort(8080).withName("http").withProtocol("TCP").build();
+        ContainerPort observabilityPort = new ContainerPortBuilder().withContainerPort(CAMEL_OBSERVABILITY_PORT).withName("observability").withProtocol("TCP").build();
 
         List<EnvVar> environmentVariables = new ArrayList<>();
         try {
@@ -448,7 +520,7 @@ public class KubernetesService {
         Container container = new ContainerBuilder()
                 .withName(name)
                 .withImage(projectDevmodeImage != null ? projectDevmodeImage : devmodeImage)
-                .withPorts(port)
+                .withPorts(port, observabilityPort)
                 .withResources(resources)
                 .withImagePullPolicy(devmodeImagePullPolicy.orElse("IfNotPresent"))
                 .withEnv(environmentVariables)
@@ -528,16 +600,26 @@ public class KubernetesService {
     }
 
     public void createConfigMap(String name, Map<String, String> data, Map<String, String> labels) {
+        createConfigMap(name, data, labels, Map.of());
+    }
+
+    public void createConfigMap(String name, Map<String, String> data, Map<String, String> labels,
+                                Map<String, String> annotations) {
         try (KubernetesClient client = kubernetesClient()) {
             ConfigMap configMap = new ConfigMapBuilder()
                     .withNewMetadata()
                     .withName(name)
                     .withNamespace(getNamespace())
                     .withLabels(labels)
+                    .withAnnotations(annotations)
                     .endMetadata()
                     .withData(data)
                     .build();
-            client.resource(configMap).serverSideApply();
+            // forceConflicts: these ConfigMaps are seeded by a manifest applied with kubectl, which records
+            // itself as the field manager of the keys it wrote. A later server-side apply from here is then
+            // a 409 FieldManagerConflict, and the operator sees a deploy that simply fails. Writing these
+            // keys is exactly what this method is for, so it takes ownership rather than asking.
+            client.resource(configMap).forceConflicts().serverSideApply();
         }
     }
 
@@ -574,6 +656,51 @@ public class KubernetesService {
             return new String(Base64.getDecoder().decode(data.getBytes(StandardCharsets.UTF_8)));
         }
         return null;
+    }
+
+    /**
+     * Contents of the `kubernetes.io/dockerconfigjson` pull secrets available to Talisman: the ones
+     * referenced by this pod and its ServiceAccount, the builder secret, and any other docker config
+     * secret of the namespace as a fallback. Legacy `.dockercfg` payloads are wrapped in `auths`.
+     */
+    public List<String> getDockerConfigJsons() {
+        List<String> result = new ArrayList<>();
+        try (KubernetesClient client = kubernetesClient()) {
+            Set<String> names = new LinkedHashSet<>();
+            String podName = System.getenv("HOSTNAME");
+            Pod pod = podName != null ? client.pods().inNamespace(getNamespace()).withName(podName).get() : null;
+            if (pod != null && pod.getSpec() != null) {
+                if (pod.getSpec().getImagePullSecrets() != null) {
+                    pod.getSpec().getImagePullSecrets().forEach(ref -> names.add(ref.getName()));
+                }
+                String serviceAccountName = pod.getSpec().getServiceAccountName();
+                if (serviceAccountName != null) {
+                    ServiceAccount serviceAccount = client.serviceAccounts().inNamespace(getNamespace()).withName(serviceAccountName).get();
+                    if (serviceAccount != null && serviceAccount.getImagePullSecrets() != null) {
+                        serviceAccount.getImagePullSecrets().forEach(ref -> names.add(ref.getName()));
+                    }
+                }
+            }
+            names.add(BUILD_DOCKER_CONFIG_SECRET);
+            client.secrets().inNamespace(getNamespace()).list().getItems().stream()
+                    .filter(secret -> Objects.equals(secret.getType(), "kubernetes.io/dockerconfigjson"))
+                    .forEach(secret -> names.add(secret.getMetadata().getName()));
+            for (String name : names) {
+                Secret secret = client.secrets().inNamespace(getNamespace()).withName(name).get();
+                Map<String, String> data = secret != null ? secret.getData() : null;
+                if (data == null) {
+                    continue;
+                }
+                if (data.get(".dockerconfigjson") != null) {
+                    result.add(decodeSecret(data.get(".dockerconfigjson")));
+                } else if (data.get(".dockercfg") != null) {
+                    result.add("{\"auths\":" + decodeSecret(data.get(".dockercfg")) + "}");
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.warn("Failed to read image pull secrets: " + e.getMessage());
+        }
+        return result;
     }
 
     public ConfigMap getConfigMap(String name) {
@@ -668,6 +795,28 @@ public class KubernetesService {
         return result;
     }
 
+    /**
+     * ConfigMaps of the namespace carrying the label, whatever its value - the selector is applied server side so
+     * the API server does the filtering. Callers that care about the value read it from the returned metadata.
+     */
+    public List<ConfigMap> getConfigMapsByLabel(String labelKey) {
+        try (KubernetesClient client = kubernetesClient()) {
+            return client.configMaps().inNamespace(getNamespace()).withLabel(labelKey).list().getItems();
+        } catch (Exception e) {
+            LOGGER.error("getConfigMapsByLabel " + labelKey + ": " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    public Map<String, ConfigMap> getProjectConfigMaps() {
+        Map<String, ConfigMap> result = new HashMap<>();
+        for (var configMap: getConfigMapsByLabel(LABEL_PROJECT_ID)) {
+            var name = configMap.getMetadata().getName();
+            result.put(name, configMap);
+        }
+        return result;
+    }
+
     public void deleteConfigMap(String configMapName) {
         ConfigMap configMap = getConfigMap(configMapName);
         if (configMap != null) {
@@ -718,17 +867,77 @@ public class KubernetesService {
                     .withField("regarding.name", containerName)
                     .list(new ListOptionsBuilder().withLimit(100L).build())
                     .getItems().forEach(e -> {
+                        String lastTimestamp;
+                        Integer count;
+
+                        if (e.getSeries() != null && e.getSeries().getLastObservedTime() != null) {
+                            // 1. Best case: Event has repeated, use the new series time
+                            lastTimestamp = e.getSeries().getLastObservedTime().getTime();
+                            count = e.getSeries().getCount();
+                        } else if (e.getEventTime() != null) {
+                            // 2. Event happened once: Use the single-occurrence time
+                            lastTimestamp = e.getEventTime().getTime();
+                            count = 1;
+                        } else if (e.getDeprecatedLastTimestamp() != null) {
+                            // 3. Fallback: Legacy compatibility field
+                            lastTimestamp = e.getDeprecatedLastTimestamp();
+                            count = e.getDeprecatedCount();
+                        } else {
+                            lastTimestamp = "Unknown";
+                            count = 0;
+                        }
                         PodEvent pe = new PodEvent(
                                 e.getMetadata().getName(),
                                 e.getRegarding().getName(),
                                 e.getReason(),
                                 e.getNote(),
-                                e.getMetadata().getCreationTimestamp());
+                                e.getType(),
+                                count,
+                                lastTimestamp);
                         list.add(pe);
                     });
         } catch (Exception e) {
             LOGGER.error("Error getting Pod Events" + e.getMessage());
         }
         return list;
+    }
+
+    public void execCommandInDeployment(String deploymentName, String command) {
+        try (KubernetesClient client = kubernetesClient()) {
+            Deployment deployment = client.apps().deployments().inNamespace(getNamespace()).withName(deploymentName).get();
+
+            if (deployment != null && deployment.getSpec().getSelector() != null) {
+                Map<String, String> matchLabels = deployment.getSpec().getSelector().getMatchLabels();
+                List<Pod> pods = client.pods().inNamespace(getNamespace()).withLabels(matchLabels).list().getItems();
+
+                if (!pods.isEmpty()) {
+                    Pod pod = pods.getFirst();
+                    String podName = pod.getMetadata().getName();
+                    String containerName = pod.getSpec().getContainers().getFirst().getName();
+
+                    LOGGER.info("Executing command in pod " + podName + " (container: " + containerName + ")");
+
+                    try (ExecWatch watch = client.pods().inNamespace(getNamespace()).withName(podName)
+                            .inContainer(containerName)
+                            .writingOutput(OutputStream.nullOutputStream())
+                            .writingError(OutputStream.nullOutputStream())
+                            .exec("sh", "-c", command)) {
+
+                        // Block the thread until the command finishes (or times out after 30s)
+                        // This keeps the WebSocket open long enough for the command to run.
+                        watch.exitCode().get(30, TimeUnit.SECONDS);
+
+                    } catch (Exception e) {
+                        LOGGER.error("Exec failed or timed out: " + e.getMessage());
+                    }
+                } else {
+                    LOGGER.warn("No pods found for deployment: " + deploymentName);
+                }
+            } else {
+                LOGGER.warn("Deployment not found or has no selector: " + deploymentName);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error executing command in container for deployment " + deploymentName + ": " + e.getMessage(), e);
+        }
     }
 }

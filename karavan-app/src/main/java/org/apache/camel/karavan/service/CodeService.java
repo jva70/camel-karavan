@@ -30,6 +30,7 @@ import org.apache.camel.karavan.cache.ProjectFolder;
 import org.apache.camel.karavan.docker.DockerComposeConverter;
 import org.apache.camel.karavan.model.DockerComposeService;
 import org.apache.camel.karavan.model.PathCommitDetails;
+import org.apache.camel.karavan.util.PathUtils;
 import org.apache.commons.text.StringSubstitutor;
 import org.apache.commons.text.lookup.StringLookup;
 import org.eclipse.microprofile.config.ConfigProvider;
@@ -47,6 +48,8 @@ import java.nio.file.*;
 import java.nio.file.FileSystem;
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.apache.camel.karavan.KaravanConstants.*;
@@ -57,16 +60,16 @@ public class CodeService {
     private static final Logger LOGGER = Logger.getLogger(CodeService.class.getName());
     public static final String APPLICATION_PROPERTIES_FILENAME = "application.properties";
     public static final String PROJECT_COMPOSE_FILENAME = "docker-compose.yaml";
-    public static final String PROJECT_STACK_FILENAME = "docker-stack.yaml";
     public static final String MARKDOWN_EXTENSION = ".md";
+    public static final String PROJECT_MD_FILENAME = "PROJECT.md";
     public static final String PROJECT_JKUBE_EXTENSION = ".jkube.yaml";
     public static final String PROJECT_DEPLOYMENT_JKUBE_FILENAME = "deployment" + PROJECT_JKUBE_EXTENSION;
     private static final String DOCKER_FOLDER = "/docker/";
     private static final String KUBERNETES_FOLDER = "/kubernetes/";
     public static final int INTERNAL_PORT = 8080;
+    public static final int CAMEL_OBSERVABILITY_PORT = 9876;
     private static final String BUILDER_POD_FRAGMENT_FILENAME = "builder.pod.jkube.yaml";
     private static final String BUILDER_COMPOSE_FILENAME = "builder.docker-compose.yaml";
-    private static final String BUILDER_STACK_FILENAME = "builder.docker-stack.yaml";
     public static final String BUILD_SCRIPT_FILENAME = "build.sh";
     public static final String JSON_EXTENSION = ".json";
     public static final String YAML_EXTENSION = ".yaml";
@@ -74,6 +77,7 @@ public class CodeService {
     public static final String CAMEL_YAML_EXTENSION = ".camel.yaml";
     public static final String KAMELET_YAML_EXTENSION = ".kamelet.yaml";
     public static final String COMPOSE_FILENAME_PREFIX= "docker-compose.";
+    private static final Pattern KAMELET_PATTERN = Pattern.compile("uri:\\s*kamelet:([^\\s'\"]+)");
 
     @ConfigProperty(name = "karavan.environment", defaultValue = KaravanConstants.DEV)
     String environment;
@@ -88,19 +92,10 @@ public class CodeService {
     KaravanCache karavanCache;
 
     @Inject
-    GitService gitService;
+    GitServiceAuth gitServiceAuth;
 
     @Inject
     Vertx vertx;
-
-    List<String> beansTemplates = List.of("database", "messaging");
-
-    public static final Map<String, String> DEFAULT_CONTAINER_RESOURCES = Map.of(
-            "requests.memory", "256Mi",
-            "requests.cpu", "500m",
-            "limits.memory", "2048Mi",
-            "limits.cpu", "2000m"
-    );
 
     public String getProjectDevModeImage(String projectId) {
         try {
@@ -112,11 +107,11 @@ public class CodeService {
         }
     }
 
-    private ProjectFile getApplicationProperties(String projectId) {
+    public ProjectFile getApplicationProperties(String projectId) {
         return karavanCache.getProjectFile(projectId, APPLICATION_PROPERTIES_FILENAME);
     }
 
-    public Map<String, String> getProjectFilesForDevMode(String projectId, Boolean withKamelets) {
+    public Map<String, String> getProjectFilesForDevMode(String projectId) {
         Map<String, String> files = karavanCache.getProjectFiles(projectId).stream()
                 .filter(f -> !f.getName().endsWith(MARKDOWN_EXTENSION))
                 .filter(f -> !Objects.equals(f.getName(), PROJECT_COMPOSE_FILENAME))
@@ -124,10 +119,12 @@ public class CodeService {
                 .filter(this::isDevFile)
                 .collect(Collectors.toMap(ProjectFile::getName, ProjectFile::getCode));
 
-        if (withKamelets) {
-            karavanCache.getProjectFiles(ProjectFolder.Type.kamelets.name())
-                    .forEach(file -> files.put(file.getName(), file.getCode()));
-        }
+        // add kamelets
+        List<String> usedKameletFilenames = extractKameletFileNames(files);
+        karavanCache.getProjectFiles(ProjectFolder.Type.kamelets.name())
+                .stream().filter(f -> usedKameletFilenames.contains(f.getName()))
+                .forEach(file -> files.put(file.getName(), file.getCode()));
+
         return files;
     }
 
@@ -150,7 +147,7 @@ public class CodeService {
 
     public Map<String, String> getSshFiles() {
         Map<String, String> sshFiles = new HashMap<>(2);
-        Tuple2<String,String> sshFileNames = gitService.getSShFiles();
+        Tuple2<String,String> sshFileNames = gitServiceAuth.getSShFiles();
         if (sshFileNames.getItem1() != null) {
             sshFiles.put("id_rsa", getFileString(sshFileNames.getItem1()));
         }
@@ -167,16 +164,19 @@ public class CodeService {
         return replaceEnvWithRuntimeProperties(code2);
     }
 
-    public String getBuilderStackFragment(String projectId, String tag) {
-        ProjectFile projectFile = karavanCache.getProjectFile(ProjectFolder.Type.configuration.name(), BUILDER_STACK_FILENAME);
-        var code = projectFile != null ? projectFile.getCode() : null;
-        var code2 = substituteVariables(code, Map.of( "projectId", projectId, "tag", tag));
-        return replaceEnvWithRuntimeProperties(code2);
-    }
-
     public String substituteVariables(String template, Map<String, String> variables) {
         StringSubstitutor sub = new StringSubstitutor(variables);
         return sub.replace(template);
+    }
+
+    public ProjectFile generateProjectMd(ProjectFolder projectFolder) {
+        String template = getTemplateText(PROJECT_MD_FILENAME);
+        String code = substituteVariables(template, Map.of(
+                "projectId", projectFolder.getProjectId(),
+                "projectName", projectFolder.getName(),
+                "packageSuffix", CodeService.getGavPackageSuffix(projectFolder.getProjectId())
+        ));
+        return new ProjectFile(PROJECT_MD_FILENAME, code, projectFolder.getProjectId(), Instant.now().getEpochSecond() * 1000L);
     }
 
     public ProjectFile generateApplicationProperties(ProjectFolder projectFolder) {
@@ -197,8 +197,11 @@ public class CodeService {
 
     private void addFile(String temp, String fileName, String code) {
         try {
-            String path = temp + File.separator + fileName;
+            String path = PathUtils.resolveInside(Paths.get(temp), fileName).toString();
             vertx.fileSystem().writeFileBlocking(path, Buffer.buffer(code));
+        } catch (SecurityException e) {
+            LOGGER.error("Path traversal blocked for file " + fileName);
+            throw e;
         } catch (Exception e) {
             LOGGER.error(e.getMessage());
         }
@@ -221,6 +224,23 @@ public class CodeService {
         return null;
     }
 
+    public String getEnvSpecificConfigurationText(String fileName) {
+        return getConfigurationText(envFileName(fileName));
+    }
+
+    /** Every environment except {@code dev} works on {@code <env>.}-prefixed files, inputs and outputs alike. */
+    public String envFileName(String fileName) {
+        return envFileName(fileName, environment);
+    }
+
+    /**
+     * The same, for an environment other than this instance's. Dev renders the artifacts every environment
+     * deploys from, so it has to name files for environments it is not running in.
+     */
+    public static String envFileName(String fileName, String env) {
+        return Objects.equals(env, KaravanConstants.DEV) ? fileName : env + "." + fileName;
+    }
+
     public String getTemplateText(String fileName) {
         try {
             List<ProjectFile> files = karavanCache.getProjectFiles(ProjectFolder.Type.templates.name());
@@ -236,7 +256,7 @@ public class CodeService {
     public Map<String, String> getBuildInProjectFiles(String projectId) {
         Map<String, String> result = new HashMap<>();
 
-        var path = "/" + projectId + (ConfigService.inKubernetes() ? KUBERNETES_FOLDER : DOCKER_FOLDER);
+        var path = getBuildInProjectPath(projectId);
 
         listResources(path).forEach(filename -> {
             if (!filename.startsWith(".")) {
@@ -251,8 +271,12 @@ public class CodeService {
     }
 
     public List<String> getBuildInProjectFileList(String projectId) {
-        var path = "/" + projectId  + (ConfigService.inKubernetes() ? KUBERNETES_FOLDER : DOCKER_FOLDER);
-        return listResources(path);
+        return listResources(getBuildInProjectPath(projectId));
+    }
+
+    private String getBuildInProjectPath(String projectId) {
+        var runtimeFolder = ConfigService.inKubernetes() ? KUBERNETES_FOLDER : DOCKER_FOLDER;
+        return "/" + projectId + runtimeFolder;
     }
 
     public String getResourceFile(String path) {
@@ -367,16 +391,6 @@ public class CodeService {
         return new ProjectFile(PROJECT_COMPOSE_FILENAME, code, projectFolder.getProjectId(), Instant.now().getEpochSecond() * 1000L);
     }
 
-    public ProjectFile createInitialProjectStack(ProjectFolder projectFolder, int nextAvailablePort) {
-        String template = getTemplateText(PROJECT_STACK_FILENAME);
-        String code = substituteVariables(template, Map.of(
-                "projectId", projectFolder.getProjectId(),
-                "projectPort", String.valueOf(nextAvailablePort),
-                "projectImage", projectFolder.getProjectId()
-        ));
-        return new ProjectFile(PROJECT_STACK_FILENAME, code, projectFolder.getProjectId(), Instant.now().getEpochSecond() * 1000L);
-    }
-
     public ProjectFile createInitialDeployment(ProjectFolder projectFolder) {
         String template = getTemplateText(PROJECT_DEPLOYMENT_JKUBE_FILENAME);
         return new ProjectFile(PROJECT_DEPLOYMENT_JKUBE_FILENAME, template, projectFolder.getProjectId(), Instant.now().getEpochSecond() * 1000L);
@@ -405,18 +419,6 @@ public class CodeService {
         ProjectFile compose = karavanCache.getProjectFile(projectId, composeFileName);
         if (compose != null) {
             return compose.getCode();
-        }
-        return null;
-    }
-
-    public String getDockerStackFileForProject(String projectId) {
-        String stackFileName = PROJECT_STACK_FILENAME;
-        if (!Objects.equals(environment, DEV)) {
-            stackFileName = environment + "." + PROJECT_STACK_FILENAME;
-        }
-        ProjectFile stack = karavanCache.getProjectFile(projectId, stackFileName);
-        if (stack != null) {
-            return stack.getCode();
         }
         return null;
     }
@@ -521,5 +523,23 @@ public class CodeService {
 
     public String getGav() {
         return gav.orElse("org.camel.karavan.demo") + ":%s:1";
+    }
+
+    public static List<String> extractKameletFileNames(Map<String, String> files) {
+        return files.entrySet().stream()
+                .filter(entry -> entry.getKey() != null && entry.getKey().endsWith(CAMEL_YAML_EXTENSION))
+                .map(Map.Entry::getValue)
+                .flatMap(content -> {
+                    List<String> names = new ArrayList<>();
+                    if (content != null) {
+                        Matcher matcher = KAMELET_PATTERN.matcher(content);
+                        while (matcher.find()) {
+                            names.add(matcher.group(1));
+                        }
+                    }
+                    return names.stream();
+                })
+                .map(k -> k.concat(KAMELET_YAML_EXTENSION))
+                .collect(Collectors.toList());
     }
 }

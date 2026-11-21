@@ -21,7 +21,7 @@ import static org.apache.camel.karavan.service.AuthService.SESSION_MAX_AGE;
 public class AuthResource extends AbstractApiResource {
 
     private static final Logger LOGGER = Logger.getLogger(AuthResource.class.getName());
-    private static final String SESSION_ID = "taskId";
+    private static final String SESSION_ID = "sessionId";
     private static final String CSRF = "csrf";
 
     @Inject
@@ -59,9 +59,26 @@ public class AuthResource extends AbstractApiResource {
     public Response login(JsonObject body) throws Exception {
         try {
             final AccessUser user = authService.login(body.getString("username"), body.getString("password"));
-            var session = authService.createAndSaveSession(user.username, true);
-            NewCookie sidCookie = new NewCookie.Builder(SESSION_ID).value(session.sessionId).path("/").maxAge(SESSION_MAX_AGE).secure(true).httpOnly(true).build();
-            NewCookie csrfCookie = new NewCookie.Builder(CSRF).value(session.csrfToken).path("/").maxAge(SESSION_MAX_AGE).secure(false).httpOnly(true).build();
+            var session = authService.createAndSaveSession(user.username, true, false);
+            // Session ID: Secure from interception, hidden from JavaScript
+            NewCookie sidCookie = new NewCookie.Builder(SESSION_ID)
+                    .value(session.sessionId)
+                    .path("/")
+                    .maxAge(SESSION_MAX_AGE)
+                    .secure(true)
+                    .httpOnly(true)
+                    .sameSite(NewCookie.SameSite.LAX) // Explicit: do not rely on the browser default
+                    .build();
+
+            // CSRF Token: Secure from interception, readable by JavaScript
+            NewCookie csrfCookie = new NewCookie.Builder(CSRF)
+                    .value(session.csrfToken)
+                    .path("/")
+                    .maxAge(SESSION_MAX_AGE)
+                    .secure(true)  // Protect against MitM attacks
+                    .httpOnly(false) // Allow frontend JS to read and send as a header
+                    .sameSite(NewCookie.SameSite.LAX)
+                    .build();
             return Response.ok(JsonObject.of("username", user.getUsername(), "roles", user.getRoles()))
                     .cookie(sidCookie).cookie(csrfCookie).build();
         } catch (Exception e) {
@@ -78,23 +95,23 @@ public class AuthResource extends AbstractApiResource {
             final var username = getIdentity().getString("username");
             final var currentPassword = body.getString("currentPassword");
             final var password = body.getString("password");
-            final AccessUser user = authService.login(username, currentPassword);
+            authService.login(username, currentPassword);
             authService.changePassword(username, password, false);
-            NewCookie sidCookie = new NewCookie.Builder(SESSION_ID).path("/").maxAge(0).secure(true).httpOnly(true).sameSite(NewCookie.SameSite.LAX).build();
-            NewCookie csrfCookie = new NewCookie.Builder(CSRF).path("/").maxAge(60).secure(false).sameSite(NewCookie.SameSite.LAX).build();
-            return Response.noContent().cookie(sidCookie).cookie(csrfCookie).build();
+            // Changing a password is usually a reaction to it being compromised, so every session
+            // opened with the old one has to die - clearing the cookies of this browser is not enough.
+            karavanCache.deleteAccessSessionByUsername(username);
+            return Response.noContent().cookie(clearedCookie(SESSION_ID, true)).cookie(clearedCookie(CSRF, false)).build();
         } catch (Exception e) {
             return Response.status(Response.Status.FORBIDDEN).entity(e.getMessage()).build();
         }
     }
 
-
     @POST
-    @PermitAll
+    @Authenticated
     @Path("/logout")
     public Response logout(@CookieParam(SESSION_ID) String sessionId) throws Exception {
-        NewCookie sidCookie = new NewCookie.Builder(SESSION_ID).path("/").maxAge(0).secure(true).httpOnly(true).sameSite(NewCookie.SameSite.LAX).build();
-        NewCookie csrfCookie = new NewCookie.Builder(CSRF).path("/").maxAge(60).secure(false).sameSite(NewCookie.SameSite.LAX).build();
+        NewCookie sidCookie = clearedCookie(SESSION_ID, true);
+        NewCookie csrfCookie = clearedCookie(CSRF, false);
         try {
             if (sessionId != null) {
                 karavanCache.deleteAccessSession(sessionId);
@@ -103,6 +120,21 @@ public class AuthResource extends AbstractApiResource {
         } catch (Exception e) {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(e.getMessage()).cookie(sidCookie).cookie(csrfCookie).build();
         }
+    }
+
+    /**
+     * Expires a cookie: an empty value with maxAge 0. The flags have to match the ones the cookie was
+     * set with, or the browser keeps the original cookie alongside the replacement.
+     */
+    private static NewCookie clearedCookie(String name, boolean httpOnly) {
+        return new NewCookie.Builder(name)
+                .value("")
+                .path("/")
+                .maxAge(0)
+                .secure(true)
+                .httpOnly(httpOnly)
+                .sameSite(NewCookie.SameSite.LAX)
+                .build();
     }
 
     @GET

@@ -61,14 +61,13 @@ public class GitLoader {
     public void load() throws Exception {
         boolean git = gitService.checkGit();
         LOGGER.info("Starting Project service: git is " + (git ? "ready" : "not ready"));
-        if (gitService.checkGit()) {
-            projectService.importProjects(false);
+        if (git) {
+            projectService.importProjects();
             if (Objects.equals(environment, DEV)) {
                 addKameletsProject();
                 addBuildInProject(ProjectFolder.Type.templates.name());
                 addBuildInProject(ProjectFolder.Type.configuration.name());
                 addBuildInProject(ProjectFolder.Type.documentation.name());
-                addBuildInProject(ProjectFolder.Type.contracts.name());
             }
             gitHistoryService.importCommits();
         } else {

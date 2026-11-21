@@ -23,7 +23,10 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.apache.camel.karavan.KaravanConstants;
-import org.apache.camel.karavan.cache.*;
+import org.apache.camel.karavan.cache.DeploymentStatus;
+import org.apache.camel.karavan.cache.KaravanCache;
+import org.apache.camel.karavan.cache.ProjectFile;
+import org.apache.camel.karavan.cache.ServiceStatus;
 import org.apache.camel.karavan.kubernetes.KubernetesService;
 import org.apache.camel.karavan.model.PodEvent;
 import org.apache.camel.karavan.service.ConfigService;
@@ -32,12 +35,10 @@ import org.jboss.logging.Logger;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
 import static org.apache.camel.karavan.KaravanConstants.KUBERNETES_YAML_FILENAME;
-import static org.apache.camel.karavan.KaravanConstants.LABEL_TYPE;
 import static org.apache.camel.karavan.KaravanEvents.CMD_RESTART_INFORMERS;
 
 @Path("/ui/infrastructure")
@@ -62,9 +63,13 @@ public class InfrastructureResource {
     @Path("/deployment")
     @Authenticated
     public List<DeploymentStatus> getAllDeploymentStatuses() throws Exception {
-        return karavanCache.getDeploymentStatuses().stream()
-                .sorted(Comparator.comparing(DeploymentStatus::getProjectId))
-                .collect(Collectors.toList());
+        if (ConfigService.inKubernetes()) {
+            return karavanCache.getDeploymentStatuses().stream()
+                    .sorted(Comparator.comparing(DeploymentStatus::getProjectId))
+                    .collect(Collectors.toList());
+        } else {
+            return List.of();
+        }
     }
 
     @GET
@@ -72,9 +77,13 @@ public class InfrastructureResource {
     @Path("/deployment/{env}")
     @Authenticated
     public List<DeploymentStatus> getDeploymentStatusesByEnv(@PathParam("env") String env) throws Exception {
-        return karavanCache.getDeploymentStatuses(env).stream()
+        if (ConfigService.inKubernetes()) {
+            return karavanCache.getDeploymentStatuses(env).stream()
                 .sorted(Comparator.comparing(DeploymentStatus::getProjectId))
                 .collect(Collectors.toList());
+        } else {
+            return List.of();
+        }
     }
 
     @POST
@@ -96,7 +105,12 @@ public class InfrastructureResource {
         if (resources == null) {
             return Response.status(Response.Status.NOT_FOUND).entity("Resource file " + KUBERNETES_YAML_FILENAME + " not found").build();
         }
-        kubernetesService.startDeployment(resources.getCode(), Map.of(LABEL_TYPE, ContainerType.packaged.name()));
+        try {
+            kubernetesService.startDeployment(resources.getCode());
+        } catch (IllegalArgumentException e) {
+            LOGGER.error("Rejected " + name + " of project " + projectId + ": " + e.getMessage());
+            return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
+        }
         return Response.ok().build();
     }
 
@@ -115,7 +129,9 @@ public class InfrastructureResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Path("/pod-events/{containerName}")
     public List<PodEvent> getPodEvents(@PathParam("containerName")  String containerName) {
-        return kubernetesService.getPodEvents(containerName);
+        return kubernetesService.getPodEvents(containerName).stream()
+                .sorted(Comparator.comparing(PodEvent::lastTimestamp).reversed())
+                .collect(Collectors.toList());
     }
 
     @GET
@@ -159,7 +175,7 @@ public class InfrastructureResource {
         if (ConfigService.inKubernetes()) {
             return Response.ok(kubernetesService.getServices(kubernetesService.getNamespace())).build();
         } else {
-            List<String> list = karavanCache.getPodContainerStatuses(environment).stream()
+            List<String> list = karavanCache.getAllPodContainerStatuses().stream()
                     .filter(ci -> ci.getPorts() != null && !ci.getPorts().isEmpty())
                     .map(ci -> ci.getPorts().stream().map(i -> ci.getContainerName() + "|" + ci.getContainerName() + ":" + i.getPrivatePort()).collect(Collectors.toList()))
                     .flatMap(List::stream).collect(Collectors.toList());

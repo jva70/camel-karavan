@@ -63,7 +63,7 @@ public class ProjectGitResource extends AbstractApiResource {
     @Path("/")
     public Response pullAll() {
         try {
-            projectService.importProjects(true);
+            projectService.importProjects();
             return Response.ok().build();
         } catch (Exception e) {
             LOGGER.error(e.getMessage());
@@ -79,6 +79,22 @@ public class ProjectGitResource extends AbstractApiResource {
     public Response pull(@PathParam("projectId") String projectId) {
         try {
             projectService.importProject(projectId);
+            return Response.ok().build();
+        } catch (Exception e) {
+            LOGGER.error(e.getMessage());
+            return Response.serverError().entity(e.getMessage()).build();
+        }
+
+    }
+
+    @PATCH
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("/{projectId}/{commitId}")
+    @Authenticated
+    public Response revertToCommit(@PathParam("projectId") String projectId, @PathParam("commitId") String commitId) {
+        try {
+            projectService.revertProjectToCommit(projectId, commitId);
             return Response.ok().build();
         } catch (Exception e) {
             LOGGER.error(e.getMessage());

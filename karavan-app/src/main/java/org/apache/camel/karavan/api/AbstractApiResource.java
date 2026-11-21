@@ -20,9 +20,20 @@ import io.quarkus.security.identity.SecurityIdentity;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import jakarta.inject.Inject;
+import org.apache.camel.karavan.cache.AccessUser;
 import org.apache.camel.karavan.cache.KaravanCache;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.jwt.JsonWebToken;
+import org.jboss.logging.Logger;
+
+import java.util.Objects;
 
 public class AbstractApiResource {
+
+    private static final Logger LOGGER = Logger.getLogger(AbstractApiResource.class.getName());
+
+    @ConfigProperty(name = "platform.auth", defaultValue = "session")
+    String authStrategy;
 
     @Inject
     SecurityIdentity identity;
@@ -39,13 +50,60 @@ public class AbstractApiResource {
         }
 
         String username = identity.getPrincipal().getName();
+        var roles = new JsonArray(new java.util.ArrayList<>(identity.getRoles()));
+        var roleList = roles.stream().map(Object::toString).toList();
         var user = karavanCache.getUser(username);
 
-        var roles = new JsonArray(new java.util.ArrayList<>(identity.getRoles()));
+        if ("oidc".equalsIgnoreCase(authStrategy)) {
+            JsonWebToken jwt = (JsonWebToken) identity.getPrincipal();
+            String firstName = jwt.getClaim("given_name");
+            String lastName = jwt.getClaim("family_name");
+            String email = jwt.getClaim("email");
+            if (user == null) {
+                LOGGER.info("OIDC User not found in Platform Database. Creating new one.");
+                user = new AccessUser(username, firstName, lastName, email, AccessUser.UserStatus.ACTIVE, roleList);
+                karavanCache.saveUser(user, true);
+            }  else if (!Objects.equals(firstName, user.getFirstName()) || !Objects.equals(lastName, user.getLastName()) || !Objects.equals(email, user.getEmail())) {
+                LOGGER.info("OIDC User found in Platform Database. User is outdated. Updating user.");
+                user.setFirstName(firstName);
+                user.setLastName(lastName);
+                user.setEmail(email);
+                user.setRoles(roleList);
+                karavanCache.saveUser(user, true);
+            }
+        }
 
         return JsonObject.of()
                 .put("email", user != null ? user.getEmail() : null)
                 .put("username", username)
                 .put("roles", roles);
+    }
+
+    /**
+     * An error body that says what went wrong, not only what was being attempted.
+     *
+     * <p>"Could not deploy the gateway configuration" tells an operator nothing they did not already know,
+     * and the reason - a rejected apply, an unreachable API server, a conflict - is then only in a log line
+     * they may not be able to read. The cause is appended so the UI can show it.
+     *
+     * <p>The deepest cause is used because the outer frame is usually the least specific: a client library
+     * wraps "conflict with kubectl-client-side-apply on .data.apisix.yaml" in its own generic failure.
+     */
+    protected static String withCause(String message, Throwable throwable) {
+        var cause = deepestMessage(throwable);
+        return cause == null ? message : message + ": " + cause;
+    }
+
+    private static String deepestMessage(Throwable throwable) {
+        String message = null;
+        for (var current = throwable; current != null; current = current.getCause()) {
+            if (current.getMessage() != null && !current.getMessage().isBlank()) {
+                message = current.getMessage();
+            }
+            if (current.getCause() == current) {
+                break;
+            }
+        }
+        return message;
     }
 }

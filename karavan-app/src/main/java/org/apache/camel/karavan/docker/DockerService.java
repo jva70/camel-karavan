@@ -22,13 +22,13 @@ import jakarta.inject.Inject;
 import org.apache.camel.karavan.cache.ContainerType;
 import org.apache.camel.karavan.model.ContainerImage;
 import org.apache.camel.karavan.model.DockerComposeService;
+import org.apache.camel.karavan.model.DockerResourceLimits;
 import org.apache.camel.karavan.model.DockerVolumeDefinition;
 import org.apache.camel.karavan.service.CodeService;
 import org.apache.camel.karavan.service.ConfigService;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.math.NumberUtils;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.health.Readiness;
 import org.jboss.logging.Logger;
@@ -41,7 +41,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 
-import static org.apache.camel.karavan.KaravanConstants.*;
+import static org.apache.camel.karavan.KaravanConstants.LABEL_PROJECT_ID;
+import static org.apache.camel.karavan.KaravanConstants.LABEL_TYPE;
 
 @Default
 @Readiness
@@ -90,15 +91,6 @@ public class DockerService {
     private volatile DockerClient dockerClient;
     private volatile DockerClient dockerClientConnectedToRegistry;
 
-    private static Boolean IN_SWARM_MODE = null;
-
-    public boolean isInSwarmMode() {
-        if (IN_SWARM_MODE == null) {
-            IN_SWARM_MODE = checkDockerSwarm();
-        }
-        return IN_SWARM_MODE;
-    }
-
     void onStart(@Observes StartupEvent ev) {
         if (!ConfigService.inKubernetes()) {
 //            getDockerClient().eventsCmd().withEventFilter("pull", "create", "attach", "start", "stop", "kill").exec(dockerEventHandler);
@@ -141,33 +133,14 @@ public class DockerService {
         }
     }
 
-    public boolean checkDockerSwarm() {
-        try {
-            Info info = getDockerClient().infoCmd().exec();
-            var swarmInfo = info.getSwarm();
-            var nodes = (swarmInfo != null && swarmInfo.getNodes() != null) ? swarmInfo.getNodes() : 0;
-            return swarmInfo != null && nodes > 0;
-        } catch (Exception e) {
-            LOGGER.error("Error connecting Docker: " + e.getMessage());
-            return false;
-        }
-    }
-
     public JsonObject getInfo() {
         try {
             var info = getDockerClient().infoCmd().exec();
-            var swarm = info.getSwarm();
-            if (swarm != null) {
-                return JsonObject.of(
-                        "Nodes", swarm.getNodes(),
-                        "NodeId", swarm.getNodeID(),
-                        "Managers", swarm.getManagers(),
-                        "Error", swarm.getError(),
-                        "MemTotal", info.getMemTotal()
-                );
-            }
+            return JsonObject.of(
+                    "MemTotal", info.getMemTotal()
+            );
         } catch (Exception e) {
-            LOGGER.error(e.getMessage());
+//            LOGGER.error(e.getMessage());
         }
         return JsonObject.of("Nodes", 0, "Error", "Swarm or Info is unavailable");
     }
@@ -213,31 +186,17 @@ public class DockerService {
 
             return createContainer(compose.getContainer_name(), compose.getImage(),
                     env, compose.getPortsMap(), healthCheck, labels, compose.getVolumes(), networkName, restartPolicy, pullImage,
-                    compose.getCpus(), compose.getCpu_percent(), compose.getMem_limit(), compose.getMem_reservation(), compose.getCommand());
+                    DockerResourceLimits.from(compose), compose.getCommand());
         } else {
             return containers.getFirst();
         }
     }
 
-    public List<Container> findContainersByProjectId(String projectId) {
-        return getDockerClient().listContainersCmd().withLabelFilter(Map.of(LABEL_PROJECT_ID, projectId)).exec();
-    }
-
-    public List<Container> findContainersByServiceId(String serviceId) {
-        return getDockerClient().listContainersCmd().withLabelFilter(Map.of(LABEL_SWARM_SERVICE_ID, serviceId)).exec();
-    }
-
     public List<Container> findContainers(String containerName) {
-        var isSwarm = isInSwarmMode();
         var list = getDockerClient().listContainersCmd().withShowAll(true).withNameFilter(List.of(containerName)).exec();
         return list.stream().filter(c -> {
             var contName = c.getNames()[0].replace("/", "");
-            if (Objects.equals(contName, containerName)) return true;
-            if (isSwarm) {
-                var stack = c.getLabels().get(LABEL_DOCKER_STACK_NAMESPACE);
-                return contName.startsWith(stack + "_" + containerName);
-            }
-            return false;
+            return Objects.equals(contName, containerName);
         }).toList();
     }
 
@@ -253,7 +212,7 @@ public class DockerService {
     public Container createContainer(String name, String image, List<String> env, Map<Integer, Integer> ports,
                                      HealthCheck healthCheck, Map<String, String> labels,
                                      List<DockerVolumeDefinition> volumes, String network, RestartPolicy restartPolicy,
-                                     PULL_IMAGE pullImage, String cpus, String cpu_percent, String mem_limit, String mem_reservation,
+                                     PULL_IMAGE pullImage, DockerResourceLimits resourceLimits,
                                      String dockerCommand) throws InterruptedException {
 
         if (Objects.equals(labels.get(LABEL_TYPE), ContainerType.devmode.name()) || Objects.equals(labels.get(LABEL_TYPE), ContainerType.build.name())) {
@@ -275,11 +234,11 @@ public class DockerService {
         }
         if (dockerCommand != null) createContainerCmd.withCmd("/bin/sh", "-c", dockerCommand);
 
-        createContainerCmd.withHostConfig(new HostConfig()
+        HostConfig hostConfig = new HostConfig()
                 .withRestartPolicy(restartPolicy).withPortBindings(portBindings).withMounts(mounts)
-                .withMemory(DockerUtils.parseMemory(mem_limit)).withMemoryReservation(DockerUtils.parseMemory(mem_reservation))
-                .withCpuPercent(NumberUtils.toLong(cpu_percent)).withNanoCPUs(NumberUtils.toLong(cpus))
-                .withNetworkMode(network != null ? network : networkName));
+                .withNetworkMode(network != null ? network : networkName);
+        DockerUtils.applyResourceLimits(hostConfig, resourceLimits);
+        createContainerCmd.withHostConfig(hostConfig);
 
         CreateContainerResponse response = createContainerCmd.exec();
         return getContainer(response.getId());
@@ -296,7 +255,7 @@ public class DockerService {
                 .withDirChildrenOnly(dirChildrenOnly).withHostResource(temp).exec();
     }
 
-    public void copyExecFile(String containerId, String containerPath, String filename, String script) {
+    public void copyFileToContainer(String containerId, String containerPath, String filename, String script, int mode) {
         String temp = vertx.fileSystem().createTempDirectoryBlocking(containerId);
         String path = temp + File.separator + filename;
         vertx.fileSystem().writeFileBlocking(path, Buffer.buffer(script));
@@ -308,7 +267,7 @@ public class DockerService {
 
             TarArchiveEntry tarEntry = new TarArchiveEntry(new File(path));
             tarEntry.setName(filename);
-            tarEntry.setMode(0755);
+            tarEntry.setMode(mode);
             tarArchive.putArchiveEntry(tarEntry);
             IOUtils.write(Files.readAllBytes(Paths.get(path)), tarArchive);
             tarArchive.closeArchiveEntry();
@@ -318,8 +277,7 @@ public class DockerService {
                     .withTarInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))
                     .withRemotePath(containerPath).exec();
         } catch (Exception e) {
-            LOGGER.error(e.getMessage());
-            e.printStackTrace();
+            LOGGER.error("Failed to copy file to container: " + e.getMessage(), e);
         }
     }
 
@@ -470,7 +428,7 @@ public class DockerService {
     public List<ContainerImage> getImages() {
         return getDockerClient().listImagesCmd().withShowAll(true).exec().stream()
                 .filter(i -> i.getRepoTags() != null && i.getRepoTags().length > 0)
-                .map(i -> new ContainerImage(i.getId(), i.getRepoTags()[0], i.getCreated(), i.getSize()))
+                .map(i -> new ContainerImage(i.getId(), List.of(i.getRepoTags()), i.getLabels(), i.getCreated(), i.getSize()))
                 .toList();
     }
 
@@ -480,9 +438,5 @@ public class DockerService {
         if (image.isPresent()) {
             getDockerClient().removeImageCmd(image.get().getId()).exec();
         }
-    }
-
-    public void createConfig(String name, String config) {
-        getDockerClient().createConfigCmd().withName(name).withData(config.getBytes()).exec();
     }
 }

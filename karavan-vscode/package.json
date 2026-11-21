@@ -4,7 +4,7 @@
   "displayName": "XKaravan",
   "icon": "icons/karavan.png",
   "description": "eXtended Karavan — Apache Camel Karavan fork with XSLT visual mapper and Kamelet schema panels",
-  "version": "4.18.1",
+  "version": "4.22.2",
   "license": "Apache-2.0",
   "preview": false,
   "bugs": {
@@ -39,22 +39,7 @@
     "Camel Yaml",
     "JBang"
   ],
-  "activationEvents": [
-    "onCommand:karavan.create-yaml",
-    "onCommand:karavan.create-kamelet",
-    "onCommand:karavan.create-application",
-    "onCommand:karavan.deploy",
-    "onCommand:karavan.open",
-    "onCommand:karavan.open-file",
-    "onCommand:karavan.run-project-jbang",
-    "onCommand:karavan.run-project-runtime",
-    "onCommand:karavan.jbang-export",
-    "onCommand:karavan.generate-rest",
-    "onCommand:karavan.download-image",
-    "onCommand:karavan.openKnowledgebase",
-    "onCommand:karavan.reportIssue",
-    "onView:integrations"
-  ],
+  "activationEvents": [],
   "main": "./dist/extension.js",
   "browser": "./dist/extension.js",
   "contributes": {
@@ -63,8 +48,8 @@
       "properties": {
         "camel.version": {
           "type": "string",
-          "default": "4.18.1",
-          "description": "Camel version",
+          "default": "4.22.2",
+          "description": "Camel version. Leave empty to use the default version selected by Camel JBang.",
           "scope": "machine",
           "order": 10
         },
@@ -209,7 +194,7 @@
             "camel.karavan.project-name=$NAME",
             "camel.karavan.target=$TARGET",
             "camel.jbang.gav=$GAV",
-            "camel.jbang.quarkusVersion=3.15.3",
+            "camel.jbang.quarkusVersion=3.39.5",
             "camel.jbang.runtime=$RUNTIME",
             "camel.jbang.exportDir=.export"
           ],
@@ -230,8 +215,8 @@
             "camel.karavan.project-name=$NAME",
             "camel.karavan.target=$TARGET",
             "camel.jbang.gav=$GAV",
-            "camel.jbang.camelSpringBootVersion=4.14.0",
-            "camel.jbang.springBootVersion=3.3.0",
+            "camel.jbang.camelSpringBootVersion=4.22.2",
+            "camel.jbang.springBootVersion=4.1.1",
             "camel.jbang.runtime=$RUNTIME",
             "camel.jbang.exportDir=.export",
             "management.endpoints.web.exposure.include=health",
@@ -253,7 +238,7 @@
             "camel.karavan.project-name=$NAME",
             "camel.karavan.target=$TARGET",
             "camel.jbang.gav=$GAV",
-            "camel.jbang.version=4.18.1",
+            "camel.jbang.version=4.22.2",
             "camel.jbang.runtime=camel-main",
             "camel.jbang.dependencies=camel-console,camel-platform-http-main",
             "camel.jbang.exportDir=.export",
@@ -501,6 +486,24 @@
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "karavan.open",
+          "when": "false"
+        },
+        {
+          "command": "karavan.open-file",
+          "when": "false"
+        },
+        {
+          "command": "karavan.download-image",
+          "when": "false"
+        },
+        {
+          "command": "karavan.generate-rest",
+          "when": "false"
+        }
+      ],
       "explorer/context": [
         {
           "command": "karavan.create-yaml",
@@ -514,7 +517,7 @@
         },
         {
           "command": "karavan.topology",
-          "when": "explorerResourceIsFolder || explorerResourceIsRoot || resourceFilename =~ /.camel.yaml$/",
+          "when": "explorerResourceIsFolder || explorerResourceIsRoot || resourceFilename =~ /\\.camel\\.yaml$/",
           "group": "karavan@1"
         },
         {
@@ -524,7 +527,7 @@
         },
         {
           "command": "karavan.open",
-          "when": "resourceFilename =~ /.camel.yaml$/ || resourceFilename =~ /.kamelet.yaml$/",
+          "when": "resourceFilename =~ /\\.camel\\.yaml$/ || resourceFilename =~ /\\.kamelet\\.yaml$/",
           "group": "karavan@4"
         },
         {
@@ -556,17 +559,17 @@
       "editor/title": [
         {
           "command": "karavan.open",
-          "when": "resourceFilename =~ /.camel.yaml$/ || resourceFilename =~ /.kamelet.yaml$/",
+          "when": "resourceFilename =~ /\\.camel\\.yaml$/ || resourceFilename =~ /\\.kamelet\\.yaml$/",
           "group": "navigation@1"
         },
         {
           "command": "karavan.run-project-jbang",
-          "when": "resourceFilename =~ /.camel.yaml$/ || karavan:loaded",
+          "when": "resourceFilename =~ /\\.camel\\.yaml$/ || karavan:loaded",
           "group": "navigation@4"
         },
         {
           "command": "karavan.run-project-runtime",
-          "when": "resourceFilename =~ /.camel.yaml$/ || karavan:loaded",
+          "when": "resourceFilename =~ /\\.camel\\.yaml$/ || karavan:loaded",
           "group": "navigation@5"
         },
         {
@@ -661,17 +664,20 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run && npm run package",
-    "compile": "npm run && cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress --stats-error-details",
-    "watch": "npm run && cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress --watch",
-    "package": "npm run && cross-env NODE_ENV=production node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress",
+    "vscode:prepublish": "npm run clean && npm run package",
+    "clean": "node -e \"require('fs').rmSync('dist', {recursive: true, force: true})\"",
+    "compile": "cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress --stats-error-details",
+    "watch": "cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress --watch",
+    "package": "cross-env NODE_ENV=production node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress",
     "webpack": "cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress",
-    "test-compile": "tsc -p ./",
-    "test-watch": "tsc -watch -p ./",
-    "pretest": "npm run && npm run test-compile && npm run lint",
-    "lint": "eslint src webview --ext .ts,.tsx",
-    "lint:fix": "eslint --fix src webview --ext .ts,.tsx",
+    "typecheck": "tsc -p . --noEmit",
+    "test-compile": "tsc -p . --noEmit",
+    "test-watch": "tsc -p . --noEmit --watch",
+    "pretest": "npm run test-compile && npm run lint",
+    "lint": "eslint src webview",
+    "lint:fix": "eslint --fix src webview",
     "test": "node ./out/test/runTest.js",
+    "test:dsl-selector": "node --test test/dsl-selector.test.cjs",
     "open-in-browser": "vscode-test-web --extensionDevelopmentPath=. ../karavan-demo/hello-world/"
   },
   "dependencies": {
@@ -691,12 +697,12 @@
     "fast-xml-parser": "^5.8.0",
     "path-browserify": "^1.0.1",
     "react-resizable-panels": "4.6.5",
-    "react-router-dom": "7.13.1",
+    "react-router-dom": "7.18.2",
     "rxjs": "7.8.2",
     "shelljs": "^0.10.0",
     "use-sync-external-store": "1.6.0",
     "usehooks-ts": "3.1.1",
-    "uuid": "13.0.0",
+    "uuid": "13.0.2",
     "zustand": "5.0.11"
   },
   "devDependencies": {
@@ -713,9 +719,9 @@
     "@types/vscode": "1.89.0",
     "@typescript-eslint/eslint-plugin": "8.39.1",
     "@typescript-eslint/parser": "8.39.1",
-    "@vscode/test-electron": "2.3.4",
+    "@vscode/test-electron": "2.5.2",
     "chai": "^4.3.4",
-    "copy-webpack-plugin": "11.0.0",
+    "copy-webpack-plugin": "14.0.0",
     "cross-env": "^7.0.3",
     "css-loader": "6.7.3",
     "eslint": "9.33.0",
@@ -724,25 +730,27 @@
     "eslint-plugin-react": "^7.23.2",
     "file-loader": "^6.2.0",
     "mini-css-extract-plugin": "^1.6.0",
-    "mocha": "^10.8.2",
+    "mocha": "^12.0.3",
     "prettier": "2.3.0",
     "process": "^0.11.10",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "run-script-os": "^1.1.6",
     "style-loader": "^2.0.0",
+    "terser-webpack-plugin": "^5.6.1",
     "ts-loader": "9.5.4",
     "tsconfig-paths-webpack-plugin": "^4.2.0",
     "typescript": "5.9.3",
     "url-loader": "4.1.1",
     "vitest": "^4.1.6",
     "vscode-test": "1.6.1",
-    "webpack": "5.103.0",
+    "webpack": "5.112.2",
     "webpack-cli": "5.0.2"
   },
   "overrides": {
     "@svgr/webpack": "$@svgr/webpack",
     "core-js": "^3.30.1",
-    "@babel/runtime": "7.26.10"
+    "@babel/runtime": "7.26.10",
+    "dompurify": "3.4.17"
   }
 }
