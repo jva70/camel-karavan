@@ -17,10 +17,10 @@
 import React, { useEffect, useRef } from 'react';
 import {
     Alert,
-    Badge,
     Button,
     Content,
     Skeleton,
+    Tooltip,
     ToggleGroup,
     ToggleGroupItem,
 } from '@patternfly/react-core';
@@ -63,7 +63,8 @@ export function XsltMapperPanel() {
     const [selectedStep] = useDesignerStore((s) => [s.selectedStep], shallow);
     const integration = useIntegrationStore((s) => s.integration);
     const { loadState, viewMode, filename, xsltContent, connections, warnings, sourceTrees, openMapper, resetMapper, setViewMode } = useXsltMapperStore();
-    const inputTrees = useSchemaPanelStore((s) => s.tabs.input.trees);
+    const inputTrees = useSchemaPanelStore((s) => (s.stepUuid === (selectedStep as any)?.uuid ? s.tabs.input.trees : []));
+    const ensureSchemaTab = useSchemaPanelStore((s) => s.ensureTab);
     const { isDark } = useTheme();
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +77,8 @@ export function XsltMapperPanel() {
         if (inputBinding && stepUuid) {
             const sourceSchemas = getUpstreamStepSchemas(integration, stepUuid);
             openMapper(inputBinding, sourceSchemas);
+            // Target pane = input schema of the selected step; load it here, independent of the Schema tab
+            ensureSchemaTab(stepUuid, 'input', params.inputSchema ?? '', (selectedStep as any)?.variableReceive || undefined);
         } else {
             resetMapper();
         }
@@ -175,7 +178,22 @@ export function XsltMapperPanel() {
                     Mapper — {filename}
                 </Content>
                 {warningCount > 0 && (
-                    <Badge className="mapper-warnings-badge">{warningCount}</Badge>
+                    <Tooltip
+                        position="bottom"
+                        maxWidth="640px"
+                        content={
+                            <ul className="mapper-warnings-tooltip">
+                                {warnings.map((w, i) => (
+                                    <li key={`w${i}`}><strong>{w.code}</strong> — {w.message}</li>
+                                ))}
+                                {connections.filter((c) => c.warning).map((c) => (
+                                    <li key={c.id}><code>{c.xpathExpression}</code> — {c.warning}</li>
+                                ))}
+                            </ul>
+                        }
+                    >
+                        <span className="mapper-warnings-link" tabIndex={0}>⚠ Parse warnings ({warningCount})</span>
+                    </Tooltip>
                 )}
                 <ToggleGroup aria-label="Mapper view mode" className="mapper-view-toggle">
                     <ToggleGroupItem text="Visual" isSelected={viewMode === 'visual'} onChange={() => setViewMode('visual')} />
@@ -185,16 +203,6 @@ export function XsltMapperPanel() {
                     <RedoIcon />
                 </Button>
             </div>
-
-            {warnings.length > 0 && viewMode === 'visual' && (
-                <Alert variant="warning" isInline title="Parse warnings" className="mapper-parse-warnings">
-                    <ul>
-                        {warnings.map((w, i) => (
-                            <li key={i}><strong>{w.code}</strong> — {w.message}</li>
-                        ))}
-                    </ul>
-                </Alert>
-            )}
 
             {/* ── Text / Monaco view ── */}
             {viewMode === 'text' && (
@@ -210,7 +218,7 @@ export function XsltMapperPanel() {
             )}
 
             {/* ── Visual / canvas view ── */}
-            {viewMode === 'visual' && (
+            {viewMode === 'visual' && (<>
                 <div className="mapper-body" ref={containerRef}>
                     {/* Source panel */}
                     <div className="mapper-source-panel">
@@ -225,29 +233,31 @@ export function XsltMapperPanel() {
                         <Content component="small" className="mapper-panel-label">Target (input schema)</Content>
                         {inputTrees.length === 0 && (
                             <Content component="p" className="mapper-empty">
-                                No input schema loaded — switch to the Schema tab first to trigger schema resolution
+                                This step has no input schema
                             </Content>
                         )}
                         {inputTrees.map((tree, i) => (
                             <SchemaTreeView key={tree.sourceFile + i} root={tree} />
                         ))}
-                        {connections.some((c) => c.targetNodePath && c.xpathExpression) && (
-                            <div className="mapper-xpath-list">
-                                {connections.map((c) => c.targetNodePath && (
-                                    <div key={c.id} className="mapper-xpath-item">
-                                        <span className="mapper-xpath-target">{c.targetNodePath}</span>
-                                        <span className="mapper-xpath-arrow">←</span>
-                                        <code className="mapper-xpath-expr">{c.xpathExpression}</code>
-                                        {c.warning && <span className="mapper-xpath-warning" title={c.warning}>⚠</span>}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </div>
 
                     <XsltMapperCanvas connections={connections} containerRef={containerRef} />
                 </div>
-            )}
+
+                {/* XPath list spans the whole mapper tab, below both panes */}
+                {connections.some((c) => c.targetNodePath && c.xpathExpression) && (
+                    <div className="mapper-xpath-list">
+                        {connections.map((c) => c.targetNodePath && (
+                            <div key={c.id} className="mapper-xpath-item">
+                                <span className="mapper-xpath-target" title={c.targetNodePath}>{c.targetNodePath}</span>
+                                <span className="mapper-xpath-arrow">←</span>
+                                <code className="mapper-xpath-expr" title={c.xpathExpression}>{c.xpathExpression}</code>
+                                {c.warning && <span className="mapper-xpath-warning" title={c.warning}>⚠</span>}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </>)}
         </div>
     );
 }

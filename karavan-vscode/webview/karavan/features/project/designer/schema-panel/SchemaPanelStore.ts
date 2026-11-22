@@ -37,11 +37,15 @@ function emptyTab(): TabState {
 
 interface SchemaPanelState {
     activeTab: SchemaTab;
+    /** uuid of the step the tabs were loaded for; tabs are dropped when another step is selected. */
+    stepUuid: string;
     tabs: Record<SchemaTab, TabState>;
     schemaViewMode: 'tree' | 'source';
     setActiveTab: (tab: SchemaTab) => void;
     setSchemaViewMode: (mode: 'tree' | 'source') => void;
     requestXsdTree: (tab: SchemaTab, storedPath: string, variableReceive?: string) => void;
+    /** Load `tab` for the given step unless already loaded; shared by the Schema and Mapper panels. */
+    ensureTab: (stepUuid: string, tab: SchemaTab, storedPath: string, variableReceive?: string) => void;
     invalidateAll: () => void;
     handleHostMessage: (message: HostToWebviewMessage) => void;
     reset: () => void;
@@ -49,6 +53,7 @@ interface SchemaPanelState {
 
 export const useSchemaPanelStore = createWithEqualityFn<SchemaPanelState>((set, get) => ({
     activeTab: 'input',
+    stepUuid: '',
     tabs: { input: emptyTab(), output: emptyTab(), error: emptyTab() },
     schemaViewMode: 'tree',
 
@@ -80,6 +85,15 @@ export const useSchemaPanelStore = createWithEqualityFn<SchemaPanelState>((set, 
             },
         }));
         for (const msg of messages) vscode.postMessage(msg);
+    },
+
+    ensureTab: (stepUuid, tab, storedPath, variableReceive) => {
+        if (get().stepUuid !== stepUuid) {
+            // New step: never keep trees (or in-flight replies) of the previous one
+            set({ stepUuid, tabs: { input: emptyTab(), output: emptyTab(), error: emptyTab() } });
+        }
+        if (get().tabs[tab].state !== 'idle') return;
+        get().requestXsdTree(tab, storedPath, variableReceive);
     },
 
     invalidateAll: () => {
@@ -127,5 +141,5 @@ export const useSchemaPanelStore = createWithEqualityFn<SchemaPanelState>((set, 
         });
     },
 
-    reset: () => set({ tabs: { input: emptyTab(), output: emptyTab(), error: emptyTab() }, schemaViewMode: 'tree' }),
+    reset: () => set({ stepUuid: '', tabs: { input: emptyTab(), output: emptyTab(), error: emptyTab() }, schemaViewMode: 'tree' }),
 }));

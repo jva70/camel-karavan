@@ -29,9 +29,19 @@
     font-weight: 600 !important;
 }
 
-.mapper-warnings-badge {
-    background-color: var(--pf-t--global--color--status--warning--default) !important;
-    color: var(--pf-t--global--text--color--on-status--default, #000) !important;
+.mapper-warnings-link {
+    color: var(--pf-t--global--color--status--warning--default);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: help;
+    white-space: nowrap;
+}
+
+.mapper-warnings-tooltip {
+    margin: 0;
+    padding-left: 16px;
+    text-align: left;
+    font-size: 12px;
 }
 
 .mapper-parse-warnings {
@@ -80,8 +90,10 @@
 
 /* XPath annotation list below target tree */
 .mapper-xpath-list {
-    margin-top: 8px;
-    padding: 0 4px;
+    flex: 0 0 auto;
+    max-height: 30%;
+    overflow-y: auto;
+    padding: 4px 8px;
     border-top: 1px solid var(--pf-t--global--border--color--default);
 }
 
@@ -98,7 +110,7 @@
     font-weight: 500;
     color: var(--pf-t--global--text--color--regular);
     flex-shrink: 0;
-    max-width: 100px;
+    max-width: 45%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

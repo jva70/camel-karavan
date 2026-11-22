@@ -92,3 +92,30 @@ cd karavan-core && npm install --ignore-scripts
 cd ../karavan-vscode && npm install && vsce package
 # Install karavan-vscode/karavan-4.18.0.vsix via Extensions → Install from VSIX
 ```
+
+# TODO: XSLT Mapper follow-ups
+
+## Remove the XPath list under the target tree (option 2)
+
+The `mapper-xpath-list` (rows of `target ← XPath`) below the target tree is redundant for plain
+`$var/path` copies and eats space. Every mapping must have a source on the left side, so the list
+is not needed to cover "undrawable" connections once all sources are shown (see next item).
+
+- [ ] Remove `.mapper-xpath-list` from `XsltMapperPanel.tsx` (+ CSS)
+- [ ] Show the full XPath expression as a tooltip when hovering an arrow in `XsltMapperCanvas.tsx`
+  (needs `pointer-events: stroke` on the paths; keep the svg itself non-blocking)
+- [ ] Connections with a complex XPath (no resolvable source) keep their warning in the
+  `⚠ Parse warnings` tooltip
+
+## Open issue: add `$_globalVariables` and `$_processContext` as mapper sources
+
+XSLTs reference engine variables that are not step outputs, e.g.
+`$_globalVariables/ns1:GlobalVariables/DARE/URL1` (SOAPRequestReply_input.xslt). They have no
+entry in the left pane, so the connection has no arrow (only visible in the XPath list).
+
+- [ ] Add `$_globalVariables` (schema: `Resources/TIBCO_Standard/DeployedVarsType`/GlobalVariables XSD, check
+  `/home/vanovcan/repos/O2/BW5/SCHEMAS.md`) and `$_processContext` (`EngineTypes.xsd` -> `ProcessContext`)
+  as always-available source variables in `getUpstreamStepSchemas` / the mapper source panel
+- [ ] Decide where their schema paths come from (route/process-level parameter vs. a fixed library path)
+- [ ] Only list them when the XSLT actually references them (avoid empty noise like the empty `$Log` source)
+- [ ] Unit tests in `src/test/unit/upstreamSchemas.test.ts`

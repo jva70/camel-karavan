@@ -21,6 +21,8 @@ interface LineCoord {
     x1: number; y1: number;
     x2: number; y2: number;
     hasWarning: boolean;
+    /** an endpoint is scrolled out of its panel: drawn clamped to the panel edge and dimmed */
+    clipped: boolean;
     id: string;
 }
 
@@ -101,15 +103,20 @@ export function XsltMapperCanvas({ connections, containerRef }: Props) {
             const tgtEl = findTargetEl(container, conn.targetNodePath);
             if (!srcEl || !tgtEl) continue;
 
-            const y1 = getMidY(srcEl, containerRect);
-            const y2 = getMidY(tgtEl, containerRect);
-
             const srcPanel = srcEl.closest('.mapper-source-panel');
             const tgtPanel = tgtEl.closest('.mapper-target-panel');
             if (!srcPanel || !tgtPanel) continue;
 
             const srcRect = srcPanel.getBoundingClientRect();
             const tgtRect = tgtPanel.getBoundingClientRect();
+
+            // Panels scroll independently: keep each endpoint inside its panel's visible area
+            const clampY = (y: number, panel: DOMRect) =>
+                Math.min(Math.max(y, panel.top - containerRect.top), panel.bottom - containerRect.top);
+            const rawY1 = getMidY(srcEl, containerRect);
+            const rawY2 = getMidY(tgtEl, containerRect);
+            const y1 = clampY(rawY1, srcRect);
+            const y2 = clampY(rawY2, tgtRect);
 
             result.push({
                 id: conn.id,
@@ -118,6 +125,7 @@ export function XsltMapperCanvas({ connections, containerRef }: Props) {
                 x2: tgtRect.left - containerRect.left,
                 y2,
                 hasWarning: !!conn.warning,
+                clipped: y1 !== rawY1 || y2 !== rawY2,
             });
         }
         setLines(result);
@@ -135,6 +143,24 @@ export function XsltMapperCanvas({ connections, containerRef }: Props) {
         const observer = new ResizeObserver(() => computeLines());
         observer.observe(container);
         return () => observer.disconnect();
+    }, [computeLines, containerRef]);
+
+    // Recompute when either panel scrolls (scroll doesn't bubble: capture) or a tree node is expanded/collapsed
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        let raf = 0;
+        const schedule = () => {
+            cancelAnimationFrame(raf);
+            raf = requestAnimationFrame(() => computeLines());
+        };
+        container.addEventListener('scroll', schedule, true);
+        container.addEventListener('click', schedule, true);
+        return () => {
+            cancelAnimationFrame(raf);
+            container.removeEventListener('scroll', schedule, true);
+            container.removeEventListener('click', schedule, true);
+        };
     }, [computeLines, containerRef]);
 
     const width = containerRef.current?.offsetWidth ?? 0;
@@ -164,7 +190,7 @@ export function XsltMapperCanvas({ connections, containerRef }: Props) {
                             fill: 'none',
                             stroke: l.hasWarning ? WARN : BLUE,
                             strokeWidth: 1.5,
-                            strokeOpacity: 0.85,
+                            strokeOpacity: l.clipped ? 0.25 : 0.85,
                         }}
                         markerEnd={l.hasWarning ? 'url(#xk-arrow-warn)' : 'url(#xk-arrow-blue)'}
                     />

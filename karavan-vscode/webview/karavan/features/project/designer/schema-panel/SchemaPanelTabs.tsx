@@ -203,29 +203,28 @@ function SchemaSourceView({ tab }: { tab: SchemaTab }) {
 export function SchemaPanelTabs() {
     const [selectedStep] = useDesignerStore((s) => [s.selectedStep], shallow);
 
-    const [activeTab, setActiveTab, requestXsdTree, invalidateAll, reset, schemaViewMode, setSchemaViewMode] = useSchemaPanelStore(
-        (s) => [s.activeTab, s.setActiveTab, s.requestXsdTree, s.invalidateAll, s.reset, s.schemaViewMode, s.setSchemaViewMode],
+    const [activeTab, setActiveTab, ensureTab, invalidateAll, schemaViewMode, setSchemaViewMode] = useSchemaPanelStore(
+        (s) => [s.activeTab, s.setActiveTab, s.ensureTab, s.invalidateAll, s.schemaViewMode, s.setSchemaViewMode],
         shallow,
     );
 
     const activeTabState = useSchemaPanelStore((s) => s.tabs[activeTab]);
     const params: Record<string, string> = (selectedStep as any)?.parameters ?? {};
     const variableReceive: string = (selectedStep as any)?.variableReceive ?? '';
+    const stepUuid: string = (selectedStep as any)?.uuid ?? '';
 
     useEffect(() => {
-        reset();
         if (selectedStep) {
-            requestXsdTree(activeTab, getStoredPath(params, activeTab), variableReceive || undefined);
+            ensureTab(stepUuid, activeTab, getStoredPath(params, activeTab), variableReceive || undefined);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [(selectedStep as any)?.uuid]);
+    }, [stepUuid]);
 
     const handleTabSelect = (_: React.MouseEvent, tab: string | number) => {
         const schemaTab = tab as SchemaTab;
         setActiveTab(schemaTab);
-        const tabState = useSchemaPanelStore.getState().tabs[schemaTab];
-        if (tabState.state === 'idle' && selectedStep) {
-            requestXsdTree(schemaTab, getStoredPath(params, schemaTab), variableReceive || undefined);
+        if (selectedStep) {
+            ensureTab(stepUuid, schemaTab, getStoredPath(params, schemaTab), variableReceive || undefined);
         }
     };
 
