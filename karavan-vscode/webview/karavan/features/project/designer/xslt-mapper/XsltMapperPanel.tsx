@@ -27,59 +27,15 @@ import {
 import { RedoIcon } from '@patternfly/react-icons';
 import Editor from '@monaco-editor/react';
 import { shallow } from 'zustand/shallow';
-import { Integration } from '@karavan-core/model/IntegrationDefinition';
 import { useDesignerStore, useIntegrationStore } from '../DesignerStore';
 import { useXsltMapperStore, SourceTreeEntry } from './XsltMapperStore';
 import { XsltMapperCanvas } from './XsltMapperCanvas';
 import { SchemaTreeView } from '../schema-panel/SchemaTreeView';
 import { useSchemaPanelStore } from '../schema-panel/SchemaPanelStore';
 import { useTheme } from '@app/theme/ThemeContext';
+import { getUpstreamStepSchemas } from './upstreamSchemas';
 import type { XsltConnection, XsdNode } from '../../../../../../src/messages';
 import './XsltMapperPanel.css';
-
-/**
- * Recursively walk all steps in a route and collect every step that has variableReceive,
- * excluding the selected step itself.  BW5-style routes use global variable scope, so
- * all variables declared anywhere in the route can be used as XSLT sources.
- */
-function getUpstreamStepSchemas(
-    integration: Integration,
-    selectedStepUuid: string
-): Array<{ variableReceive: string; storedPath: string }> {
-    const result: Array<{ variableReceive: string; storedPath: string }> = [];
-    const seen = new Set<string>();
-
-    function walk(step: any): void {
-        if (!step || typeof step !== 'object') return;
-        if (step.uuid === selectedStepUuid) return;
-
-        const vr: string = step.variableReceive ?? '';
-        if (vr && !seen.has(vr)) {
-            seen.add(vr);
-            const params = step.parameters ?? {};
-            const storedPath: string =
-                params.outputSchema ?? params.variableSchema ?? params.inputSchema ?? '';
-            result.push({ variableReceive: `$${vr}`, storedPath });
-        }
-
-        for (const val of Object.values(step)) {
-            if (Array.isArray(val)) {
-                for (const item of val) {
-                    if (item && typeof item === 'object') walk(item);
-                }
-            } else if (val && typeof val === 'object') {
-                walk(val as any);
-            }
-        }
-    }
-
-    for (const flow of (integration as any).spec?.flows ?? []) {
-        const from = flow?.from;
-        if (!from) continue;
-        walk(from);
-    }
-    return result;
-}
 
 /** Build a virtual XsdNode tree for a variable from connection source paths (fallback when no XSD). */
 function buildVirtualTree(variableReceive: string, connections: XsltConnection[]): XsdNode {
