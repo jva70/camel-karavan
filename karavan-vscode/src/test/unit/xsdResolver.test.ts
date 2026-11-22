@@ -260,3 +260,69 @@ describe('buildXsdTree — import-only wrapper (P17)', () => {
         expect(warnings).toHaveLength(0);
     });
 });
+
+// ─── Roots: only global elements are document roots ──────────────────────────
+
+describe('buildXsdTree — roots', () => {
+    const XS = 'xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="urn:t" targetNamespace="urn:t"';
+    const memRead = (files: Record<string, string>): ReadFileFn => async (p) => {
+        const c = files[p];
+        if (c === undefined) throw new Error(`ENOENT ${p}`);
+        return Buffer.from(c, 'utf8');
+    };
+    const rootNames = (root: { name: string; type: string; children: { name: string }[] }, file: string) =>
+        root.type === 'complexType' && root.name === file ? root.children.map((c) => c.name) : [root.name];
+
+    const elementAndType = `<xs:schema ${XS}>
+        <xs:complexType name="ActivityInputSchema"><xs:sequence><xs:element name="message" type="xs:string"/></xs:sequence></xs:complexType>
+        <xs:element name="ActivityInput" type="tns:ActivityInputSchema"/>
+    </xs:schema>`;
+
+    it('element plus its named type: a single root (the element)', async () => {
+        const { root, warnings } = await buildXsdTree('/x/a.xsd', memRead({ '/x/a.xsd': elementAndType }));
+        expect(warnings).toHaveLength(0);
+        expect(root.name).toBe('ActivityInput');
+        expect(root.type).toBe('element');
+        expect(root.path).toBe('ActivityInput');
+        expect(root.children.map((c) => c.path)).toEqual(['ActivityInput.message']);
+    });
+
+    it('type-only file still lists the type', async () => {
+        const xsd = `<xs:schema ${XS}><xs:complexType name="OnlyType"><xs:sequence><xs:element name="a" type="xs:string"/></xs:sequence></xs:complexType></xs:schema>`;
+        const { root } = await buildXsdTree('/x/t.xsd', memRead({ '/x/t.xsd': xsd }));
+        expect(root.name).toBe('OnlyType');
+        expect(root.type).toBe('complexType');
+    });
+
+    it('wrapper importing a file with element and type: only the element', async () => {
+        const wrapper = `<xs:schema ${XS}><xs:import namespace="urn:t" schemaLocation="a.xsd"/></xs:schema>`;
+        const { root } = await buildXsdTree('/x/w.xsd', memRead({ '/x/w.xsd': wrapper, '/x/a.xsd': elementAndType }));
+        expect(rootNames(root, 'w')).toEqual(['ActivityInput']);
+        expect(root.type).toBe('element');
+    });
+
+    it('two elements sharing one named type: two roots, the type is not a root', async () => {
+        const xsd = `<xs:schema ${XS}>
+            <xs:complexType name="Shared"><xs:sequence><xs:element name="v" type="xs:string"/></xs:sequence></xs:complexType>
+            <xs:element name="One" type="tns:Shared"/>
+            <xs:element name="Two" type="tns:Shared"/>
+        </xs:schema>`;
+        const { root } = await buildXsdTree('/x/s.xsd', memRead({ '/x/s.xsd': xsd }));
+        expect(rootNames(root, 's')).toEqual(['One', 'Two']);
+        expect(root.children.map((c) => c.type)).toEqual(['element', 'element']);
+        expect(root.children[0].children.map((c) => c.path)).toEqual(['One.v']);
+        expect(root.children[1].children.map((c) => c.path)).toEqual(['Two.v']);
+    });
+
+    it('element ref to a global element of an imported file keeps path and children', async () => {
+        const lib = `<xs:schema ${XS}><xs:element name="Addr"><xs:complexType><xs:sequence><xs:element name="street" type="xs:string"/></xs:sequence></xs:complexType></xs:element></xs:schema>`;
+        const main = `<xs:schema ${XS}><xs:import namespace="urn:t" schemaLocation="lib.xsd"/>
+            <xs:complexType name="Holder"><xs:sequence><xs:element ref="tns:Addr"/></xs:sequence></xs:complexType>
+            <xs:element name="Root" type="tns:Holder"/></xs:schema>`;
+        const { root, warnings } = await buildXsdTree('/x/m.xsd', memRead({ '/x/m.xsd': main, '/x/lib.xsd': lib }));
+        expect(warnings).toHaveLength(0);
+        expect(root.name).toBe('Root');
+        expect(root.children[0].path).toBe('Root.Addr');
+        expect(root.children[0].children[0].path).toBe('Root.Addr.street');
+    });
+});

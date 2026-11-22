@@ -436,7 +436,10 @@ async function parseSchemaFile(absPath: string, ctx: ParseCtx): Promise<XsdNode[
             }
         }
 
+        // Named types / groups / attributeGroups are registered globally (needed for ref/type/base resolution)
+        // but are only document roots in library-style schemas that declare no global element.
         const topNodes: XsdNode[] = [];
+        const elementRoots: XsdNode[] = [];
 
         // Pass 2: build children now that all types/groups from this file are registered
         for (const ct of arr(schema['xs:complexType'] ?? schema['xsd:complexType'])) {
@@ -473,13 +476,14 @@ async function parseSchemaFile(absPath: string, ctx: ParseCtx): Promise<XsdNode[
         for (const el of arr(schema['xs:element'] ?? schema['xsd:element'])) {
             const node = buildElementNode(el as Record<string, unknown>, '', absPath, ctx, fileNsMap);
             if (node) {
-                topNodes.push(node);
+                elementRoots.push(node);
                 ctx.globalElements.set(node.name, node); // unqualified fallback
                 if (targetNs) ctx.globalElements.set(`${targetNs}:${node.name}`, node); // P3 qualified key
             }
         }
 
-        return topNodes;
+        // Only global elements can be document roots (as in TIBCO's mapper); fall back to the named types otherwise.
+        return elementRoots.length > 0 ? elementRoots : topNodes;
     } finally {
         ctx.depth--; // P1: always decrement even on unexpected error
     }
