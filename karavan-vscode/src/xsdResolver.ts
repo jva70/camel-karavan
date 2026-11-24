@@ -51,6 +51,8 @@ interface ParseCtx {
     /** Keyed by both qualified "{ns}:name" and unqualified "name" for fallback lookups. */
     globalGroups: Map<string, XsdNode>;
     targetNsMap: Map<string, string>;
+    /** Definitions registered but not built yet (forward references); built on first use of their children. */
+    lazy: Map<XsdNode, () => void>;
     paramName?: string;
     /** Absolute path of the root XSD file passed to buildXsdTree — used to capture rawSource. */
     primaryAbsPath: string;
@@ -92,6 +94,16 @@ function resolveKey(qname: string, fileNsMap: Map<string, string>): string {
     return nsUri ? `${nsUri}:${local}` : local;
 }
 
+/** Build a pre-registered definition now if that has not happened yet; call before reading `node.children`. */
+function built(ctx: ParseCtx, node: XsdNode): XsdNode {
+    const build = ctx.lazy.get(node);
+    if (build) {
+        ctx.lazy.delete(node);   // before running: guards against recursive definitions
+        build();
+    }
+    return node;
+}
+
 function warn(code: string, message: string, detail?: string): Warning {
     return { code, message, detail, severity: 'error' };
 }
@@ -122,6 +134,7 @@ function buildElementNode(
         const global = ctx.globalElements.get(key) ?? ctx.globalElements.get(lname);
         const nodePath = parentPath ? `${parentPath}.${lname}` : lname;
         if (global) {
+            built(ctx, global);
             return { ...global, path: nodePath, children: global.children.map(c => rebase(c, nodePath)) };
         }
         const w = `Unresolved ref: ${ref}`;
@@ -145,6 +158,7 @@ function buildElementNode(
             const key = resolveKey(typeAttr, fileNsMap);
             const resolved = ctx.globalTypes.get(key) ?? ctx.globalTypes.get(localName(typeAttr));
             if (resolved) {
+                built(ctx, resolved);
                 children.push(...resolved.children.map(c => rebase(c, nodePath)));
             }
         }
@@ -184,6 +198,7 @@ function buildComplexTypeChildren(
                         const baseKey = resolveKey(base, fileNsMap);
                         const baseType = ctx.globalTypes.get(baseKey) ?? ctx.globalTypes.get(localName(base));
                         if (baseType) {
+                            built(ctx, baseType);
                             children.push(...baseType.children.map(c => rebase(c, parentPath)));
                         }
                     }
@@ -229,6 +244,7 @@ function buildComplexTypeChildren(
             const key = resolveKey(ref, fileNsMap);
             const grp = ctx.globalGroups.get(key) ?? ctx.globalGroups.get(localName(ref));
             if (grp) {
+                built(ctx, grp);
                 children.push(...grp.children.map(c => rebase(c, parentPath)));
             } else {
                 const w = `Unresolved attributeGroup ref: ${ref}`;
@@ -307,7 +323,7 @@ function resolveGroupRef(
     const lname = localName(ref);
     const key = resolveKey(ref, fileNsMap);
     const grp = ctx.globalGroups.get(key) ?? ctx.globalGroups.get(lname);
-    if (grp) return grp.children.map(c => rebase(c, parentPath));
+    if (grp) return built(ctx, grp).children.map(c => rebase(c, parentPath));
     const w = `Unresolved group ref: ${ref}`;
     ctx.warnings.push(warn('XSD_UNRESOLVED_REF', w, sourceFile)); // P10
     return [{ name: lname, type: 'group', path: `${parentPath}.${lname}`, sourceFile, children: [], warning: w }];
@@ -406,6 +422,8 @@ async function parseSchemaFile(absPath: string, ctx: ParseCtx): Promise<XsdNode[
                 ctx.globalTypes.set(name, stub);
                 if (targetNs) ctx.globalTypes.set(`${targetNs}:${name}`, stub); // P3
             }
+            const node = ctx.globalTypes.get(name)!;
+            ctx.lazy.set(node, () => { node.children = buildComplexTypeChildren(ct as Record<string, unknown>, name, absPath, ctx, fileNsMap); });
         }
         for (const st of arr(schema['xs:simpleType'] ?? schema['xsd:simpleType'])) {
             const name = (st as Record<string, unknown>)['@_name'] as string | undefined;
@@ -424,6 +442,8 @@ async function parseSchemaFile(absPath: string, ctx: ParseCtx): Promise<XsdNode[
                 ctx.globalGroups.set(name, stub);
                 if (targetNs) ctx.globalGroups.set(`${targetNs}:${name}`, stub); // P3
             }
+            const node = ctx.globalGroups.get(name)!;
+            ctx.lazy.set(node, () => { node.children = buildGroupChildren(grp as Record<string, unknown>, name, absPath, ctx, fileNsMap); });
         }
         // P4: pre-register attributeGroup definitions
         for (const ag of arr(schema['xs:attributeGroup'] ?? schema['xsd:attributeGroup'])) {
@@ -434,6 +454,23 @@ async function parseSchemaFile(absPath: string, ctx: ParseCtx): Promise<XsdNode[
                 ctx.globalGroups.set(name, stub);
                 if (targetNs) ctx.globalGroups.set(`${targetNs}:${name}`, stub);
             }
+            const node = ctx.globalGroups.get(name)!;
+            ctx.lazy.set(node, () => { node.children = buildComplexTypeChildren(ag as Record<string, unknown>, name, absPath, ctx, fileNsMap); });
+        }
+        // Global elements are pre-registered too, so types/groups of this file can ref elements declared later
+        const elementStubs: XsdNode[] = [];
+        for (const el of arr(schema['xs:element'] ?? schema['xsd:element'])) {
+            const elObj = el as Record<string, unknown>;
+            const name = elObj['@_name'] as string | undefined;
+            if (!name) continue;
+            const stub: XsdNode = { name, type: 'element', path: name, sourceFile: absPath, children: [] };
+            ctx.globalElements.set(name, stub); // unqualified fallback
+            if (targetNs) ctx.globalElements.set(`${targetNs}:${name}`, stub); // P3 qualified key
+            ctx.lazy.set(stub, () => {
+                const real = buildElementNode(elObj, '', absPath, ctx, fileNsMap);
+                if (real) Object.assign(stub, real);
+            });
+            elementStubs.push(stub);
         }
 
         // Named types / groups / attributeGroups are registered globally (needed for ref/type/base resolution)
@@ -446,7 +483,7 @@ async function parseSchemaFile(absPath: string, ctx: ParseCtx): Promise<XsdNode[
             const name = (ct as Record<string, unknown>)['@_name'] as string | undefined;
             if (!name) continue;
             const node = ctx.globalTypes.get(name)!;
-            node.children = buildComplexTypeChildren(ct as Record<string, unknown>, name, absPath, ctx, fileNsMap);
+            built(ctx, node);
             topNodes.push(node);
         }
 
@@ -460,7 +497,7 @@ async function parseSchemaFile(absPath: string, ctx: ParseCtx): Promise<XsdNode[
             const name = (grp as Record<string, unknown>)['@_name'] as string | undefined;
             if (!name) continue;
             const node = ctx.globalGroups.get(name)!;
-            node.children = buildGroupChildren(grp as Record<string, unknown>, name, absPath, ctx, fileNsMap);
+            built(ctx, node);
             topNodes.push(node);
         }
 
@@ -469,18 +506,11 @@ async function parseSchemaFile(absPath: string, ctx: ParseCtx): Promise<XsdNode[
             const name = (ag as Record<string, unknown>)['@_name'] as string | undefined;
             if (!name) continue;
             const node = ctx.globalGroups.get(name)!;
-            node.children = buildComplexTypeChildren(ag as Record<string, unknown>, name, absPath, ctx, fileNsMap);
+            built(ctx, node);
             topNodes.push(node);
         }
 
-        for (const el of arr(schema['xs:element'] ?? schema['xsd:element'])) {
-            const node = buildElementNode(el as Record<string, unknown>, '', absPath, ctx, fileNsMap);
-            if (node) {
-                elementRoots.push(node);
-                ctx.globalElements.set(node.name, node); // unqualified fallback
-                if (targetNs) ctx.globalElements.set(`${targetNs}:${node.name}`, node); // P3 qualified key
-            }
-        }
+        for (const stub of elementStubs) elementRoots.push(built(ctx, stub));
 
         // Only global elements can be document roots (as in TIBCO's mapper); fall back to the named types otherwise.
         return elementRoots.length > 0 ? elementRoots : topNodes;
@@ -510,6 +540,7 @@ export async function buildXsdTree(
         globalTypes: new Map(),
         globalGroups: new Map(),
         targetNsMap: new Map(),
+        lazy: new Map(),
         paramName,
         primaryAbsPath: absPath,
     };

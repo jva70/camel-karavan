@@ -325,4 +325,21 @@ describe('buildXsdTree — roots', () => {
         expect(root.children[0].path).toBe('Root.Addr');
         expect(root.children[0].children[0].path).toBe('Root.Addr.street');
     });
+
+    it('type referencing a global element declared later in the same file resolves without warnings', async () => {
+        const xsd = `<xs:schema ${XS}>
+            <xs:complexType name="Sub"><xs:sequence><xs:element ref="tns:extId"/><xs:element ref="tns:addr"/></xs:sequence></xs:complexType>
+            <xs:element name="subscriber" type="tns:Sub"/>
+            <xs:element name="extId" type="tns:ExtId"/>
+            <xs:element name="addr"><xs:complexType><xs:sequence><xs:element name="street" type="xs:string"/></xs:sequence></xs:complexType></xs:element>
+            <xs:simpleType name="ExtId"><xs:restriction base="xs:token"/></xs:simpleType>
+        </xs:schema>`;
+        const { root, warnings } = await buildXsdTree('/x/f.xsd', memRead({ '/x/f.xsd': xsd }));
+        expect(warnings).toHaveLength(0);
+        expect(rootNames(root, 'f')).toEqual(['subscriber', 'extId', 'addr']);
+        const sub = root.children.find((c) => c.name === 'subscriber')!;
+        expect(sub.children.map((c) => c.path)).toEqual(['subscriber.extId', 'subscriber.addr']);
+        expect(sub.children[0].dataType).toBe('tns:ExtId');
+        expect(sub.children[1].children.map((c) => c.path)).toEqual(['subscriber.addr.street']);
+    });
 });
