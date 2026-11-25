@@ -40,7 +40,7 @@ interface XsltMapperState {
     errorDetail: string;
     /** One entry per upstream step — populated from xsltParsed reply. */
     sourceTrees: SourceTreeEntry[];
-    openMapper: (storedPath: string, sourceSchemas: Array<{ variableReceive: string; storedPath: string }>) => void;
+    openMapper: (storedPath: string, sourceSchemas: Array<{ variableReceive: string; storedPath: string; rootElement?: string }>) => void;
     resetMapper: () => void;
     setViewMode: (mode: MapperViewMode) => void;
     handleHostMessage: (message: HostToWebviewMessage) => void;

@@ -272,9 +272,15 @@ function SourcePanel({ sourceTrees, connections }: { sourceTrees: SourceTreeEntr
         );
     }
 
+    // A variable without schema that no mapping uses has nothing to show (e.g. the output of a WriteToLog step);
+    // the error variables are always shown since they exist in every catch branch.
+    const visible = sourceTrees.filter((e) =>
+        e.tree || e.warnings.length > 0 || e.variableReceive.startsWith('$_error')
+        || connections.some((c) => c.sourceVariable === e.variableReceive));
+
     return (
         <>
-            {sourceTrees.map((entry) => {
+            {visible.map((entry) => {
                 const label = entry.variableReceive;
                 if (entry.tree) {
                     // Real XSD tree from host

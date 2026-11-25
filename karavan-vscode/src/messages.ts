@@ -224,6 +224,6 @@ export type WebviewToHostMessage =
         payload: {
             storedPath: string;
             /** Upstream step schemas to resolve into source trees in the same round-trip. */
-            sourceSchemas: Array<{ variableReceive: string; storedPath: string }>;
+            sourceSchemas: Array<{ variableReceive: string; storedPath: string; rootElement?: string }>;
         };
     };

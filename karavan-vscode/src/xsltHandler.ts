@@ -156,7 +156,9 @@ export async function handleXmlmapperMessage(
                         try {
                             const absPath = await resolveStoredPath(src.storedPath, workspaceRoot);
                             const treeResult = await buildXsdTree(absPath, readFile);
-                            sourceTrees.push({ variableReceive: src.variableReceive, tree: treeResult.root, warnings: treeResult.warnings });
+                            // rootElement: keep only that global element of a multi-root schema file (e.g. ErrorReport of EngineTypes.xsd)
+                            const tree = (src.rootElement && treeResult.root.children.find((c) => c.name === src.rootElement)) || treeResult.root;
+                            sourceTrees.push({ variableReceive: src.variableReceive, tree, warnings: treeResult.warnings });
                         } catch (e: any) {
                             sourceTrees.push({ variableReceive: src.variableReceive, tree: null, warnings: [{ code: 'XSD_FILE_NOT_FOUND', message: e.message, severity: 'error' }] });
                         }
